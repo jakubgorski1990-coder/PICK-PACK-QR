@@ -1,5 +1,6 @@
 package pl.pickpack.panel
 
+import android.media.AudioManager
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -25,6 +26,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Hardware volume keys adjust media stream (alert MP3s use STREAM_MUSIC).
+        @Suppress("DEPRECATION")
+        volumeControlStream = AudioManager.STREAM_MUSIC
         enableEdgeToEdge()
         setContent {
             PickPackTheme {

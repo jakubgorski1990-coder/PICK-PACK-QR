@@ -56,7 +56,7 @@ Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same stat
 ## Dźwięk przycisków kuriera
 
 - Przełączenie na **Odebrane** → `res/raw/odebrano.mp3`; na **Czeka na odbiór** → `res/raw/czeka_na_odbior.mp3`.
-- Wspólna kolejka `AlertSoundPlayer` (bez nakładania). Włącz/wyłącz w Ustawieniach (domyślnie on).
+- Wspólna kolejka `AlertSoundPlayer` (bez nakładania), stream **MUSIC** (głośność multimediów, nie dzwonek). Włącz/wyłącz w Ustawieniach (domyślnie on).
 
 ## Godzina graniczna kuriera
 
