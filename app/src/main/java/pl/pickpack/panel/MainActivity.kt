@@ -12,6 +12,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import pl.pickpack.panel.presentation.baselinker.BaselinkerConfigScreen
 import pl.pickpack.panel.presentation.completeness.CompletenessScreen
 import pl.pickpack.panel.presentation.importqr.ImportQrScreen
 import pl.pickpack.panel.presentation.main.MainScreen
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
                             onBack = { nav.popBackStack() },
                             onOpenImport = { nav.navigate("import") },
                             onOpenCompleteness = { nav.navigate("completeness") },
+                            onOpenBaselinker = { nav.navigate("baselinker") },
                         )
                     }
                     composable("import") {
@@ -60,6 +62,12 @@ class MainActivity : ComponentActivity() {
                     }
                     composable("completeness") {
                         CompletenessScreen(
+                            viewModel = viewModel,
+                            onBack = { nav.popBackStack() },
+                        )
+                    }
+                    composable("baselinker") {
+                        BaselinkerConfigScreen(
                             viewModel = viewModel,
                             onBack = { nav.popBackStack() },
                         )

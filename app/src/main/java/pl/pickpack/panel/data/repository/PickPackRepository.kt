@@ -5,33 +5,46 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
-import android.os.ParcelFileDescriptor
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import pl.pickpack.panel.data.AppDatabase
 import pl.pickpack.panel.data.ConfigExportImport
 import pl.pickpack.panel.data.DemoContent
 import pl.pickpack.panel.data.QrBitmapEncoder
+import pl.pickpack.panel.data.baselinker.BaseLinkerClient
 import pl.pickpack.panel.data.datastore.SettingsDataStore
 import pl.pickpack.panel.data.entity.GroupMetaEntity
+import pl.pickpack.panel.data.entity.QrVariantEntity
+import pl.pickpack.panel.data.provider.BaselinkerOrderPoolProvider
 import pl.pickpack.panel.data.provider.DemoOrderPoolProvider
 import pl.pickpack.panel.data.provider.LocalQrTemplateProvider
-import pl.pickpack.panel.data.provider.OrderPoolProvider
 import pl.pickpack.panel.data.provider.QrTemplateProvider
-import pl.pickpack.panel.data.provider.StubOrderPoolProvider
+import pl.pickpack.panel.data.security.SecureTokenStore
 import pl.pickpack.panel.domain.AppSettings
+import pl.pickpack.panel.domain.BlStatus
+import pl.pickpack.panel.domain.BlpptPayload
 import pl.pickpack.panel.domain.CounterDisplay
 import pl.pickpack.panel.domain.CourierState
 import pl.pickpack.panel.domain.GroupConfig
 import pl.pickpack.panel.domain.GroupId
+import pl.pickpack.panel.domain.PoolFilterConfig
 import pl.pickpack.panel.domain.QrDisplayState
 import pl.pickpack.panel.domain.QrSelectionLogic
 import pl.pickpack.panel.domain.QrVariantConfig
 import pl.pickpack.panel.domain.QrVariantKey
+import pl.pickpack.panel.domain.SyncState
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
@@ -41,13 +54,29 @@ class PickPackRepository(
     private val context: Context,
     private val db: AppDatabase = AppDatabase.get(context),
     private val settingsStore: SettingsDataStore = SettingsDataStore(context),
+    private val tokenStore: SecureTokenStore = SecureTokenStore(context),
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     val qrProvider: QrTemplateProvider = LocalQrTemplateProvider(db.qrVariantDao())
-    private val stubPool: OrderPoolProvider = StubOrderPoolProvider()
     private val demoPool = DemoOrderPoolProvider()
 
-    val settingsFlow: Flow<AppSettings> = settingsStore.settingsFlow
+    private val blClient = BaseLinkerClient(tokenProvider = { tokenStore.getToken() })
+    @Volatile private var latestPoolFilter: PoolFilterConfig = PoolFilterConfig()
+    val blPool = BaselinkerOrderPoolProvider(
+        client = blClient,
+        configProvider = { latestPoolFilter },
+        tokenPresent = { tokenStore.hasToken() },
+    )
+
+    val settingsFlow: Flow<AppSettings> = settingsStore.settingsFlow.map { s ->
+        s.copy(
+            baselinkerTokenPresent = tokenStore.hasToken(),
+            counterConfigured = tokenStore.hasToken() && s.poolFilter.isCounterRulesReady(),
+        )
+    }
     val courierStatesFlow: Flow<List<CourierState>> = settingsStore.courierStatesFlow
+    val syncStateFlow: StateFlow<SyncState> = blPool.syncState
 
     val variantsFlow: Flow<List<QrVariantConfig>> =
         db.qrVariantDao().observeAll().map { list -> list.map { it.toDomain() } }
@@ -78,14 +107,16 @@ class PickPackRepository(
         val displays: Map<GroupId, QrDisplayState>,
         val counters: Map<GroupId, CounterDisplay>,
         val connectionLabel: String,
+        val syncState: SyncState,
     )
 
-    val panelFlow: Flow<PanelSnapshot> = combine(
+    private val panelSource = combine(
         settingsFlow,
         courierStatesFlow,
         groupsFlow,
         variantsFlow,
-    ) { settings, couriers, groups, variants ->
+        syncStateFlow,
+    ) { settings, couriers, groups, variants, sync ->
         val demoMap = if (settings.demoMode) {
             DemoContent.allVariants().associateBy { it.groupId to it.mask }
         } else emptyMap()
@@ -103,24 +134,12 @@ class PickPackRepository(
                 demoVariants = demoForGroup,
             )
         }
-        val pool: OrderPoolProvider = if (settings.demoMode) demoPool else stubPool
         val counters = GroupId.entries.associateWith { groupId ->
-            when {
-                settings.demoMode -> {
-                    val active = couriers.filter { it.groupId == groupId && it.isActive }.map { it.id }.toSet()
-                    // Suspend not available here — use sync demo formula
-                    val waiting = run {
-                        if (active.isEmpty()) 0
-                        else {
-                            val base = if (groupId == GroupId.PICK_PACK_1) 18 else 12
-                            base + active.size * 3
-                        }
-                    }
-                    CounterDisplay.DemoValue(waiting, threshold = 25)
-                }
-                !settings.counterConfigured -> CounterDisplay.NotConfigured
-                else -> CounterDisplay.NotConfigured
-            }
+            buildCounter(settings, couriers, groupId, sync)
+        }
+        val label = when {
+            settings.demoMode -> demoPool.connectionLabel()
+            else -> blPool.connectionLabel()
         }
         PanelSnapshot(
             settings = settings,
@@ -129,17 +148,100 @@ class PickPackRepository(
             variants = variants,
             displays = displays,
             counters = counters,
-            connectionLabel = pool.connectionLabel(),
+            connectionLabel = label,
+            syncState = sync,
         )
+    }
+
+    val panelFlow: StateFlow<PanelSnapshot?> =
+        panelSource.stateIn(scope, SharingStarted.Eagerly, null)
+
+    init {
+        scope.launch {
+            settingsStore.poolFilterFlow.collect { latestPoolFilter = it }
+        }
+        scope.launch {
+            seedTemplateIdsIfNeeded()
+            maybeDailyReset()
+            runSyncLoop()
+        }
+    }
+
+    private fun buildCounter(
+        settings: AppSettings,
+        couriers: List<CourierState>,
+        groupId: GroupId,
+        sync: SyncState,
+    ): CounterDisplay {
+        if (settings.demoMode) {
+            val active = couriers.filter { it.groupId == groupId && it.isActive }.map { it.id }.toSet()
+            val waiting = if (active.isEmpty()) 0 else {
+                val base = if (groupId == GroupId.PICK_PACK_1) 18 else 12
+                base + active.size * 3
+            }
+            return CounterDisplay.DemoValue(waiting, threshold = 25)
+        }
+        val configured = settings.baselinkerTokenPresent && settings.poolFilter.isCounterRulesReady()
+        if (!configured) return CounterDisplay.NotConfigured
+        val active = couriers.filter { it.groupId == groupId && it.isActive }.map { it.id }.toSet()
+        val waiting = BaselinkerOrderPoolProvider.countMatching(
+            orders = blPool.cachedOrders(),
+            mappings = settings.poolFilter.deliveryMappings,
+            activeCourierIds = active,
+            onlyConfirmed = settings.poolFilter.onlyConfirmed,
+        )
+        return CounterDisplay.Live(
+            waiting = waiting,
+            estimated = true,
+            lastSyncEpochMs = sync.lastSuccessEpochMs,
+            error = sync.lastError,
+        )
+    }
+
+    private suspend fun runSyncLoop() {
+        while (scope.isActive) {
+            val settings = settingsFlow.first()
+            val intervalMs = settings.poolFilter.syncIntervalSec.coerceIn(15, 600) * 1000L
+            if (!settings.demoMode &&
+                settings.baselinkerTokenPresent &&
+                settings.poolFilter.isCounterRulesReady()
+            ) {
+                blPool.syncNow(force = false)
+            }
+            delay(intervalMs)
+        }
+    }
+
+    private suspend fun seedTemplateIdsIfNeeded() {
+        val existing = db.qrVariantDao().getAll().filter { !it.isDemo }
+        if (existing.any { it.templateIdHint != null }) return
+        // Prefill full-set variants (mask 7) with known BL template IDs → BLPPT payload.
+        GroupId.entries.forEach { group ->
+            val key = QrVariantKey(group, 7)
+            val config = QrVariantConfig(
+                groupId = group,
+                mask = 7,
+                payload = null,
+                enabled = true,
+                isDemo = false,
+                fallbackImagePath = null,
+                sourceLabel = "BLPPT auto",
+                templateIdHint = group.defaultTemplateId,
+            )
+            db.qrVariantDao().upsert(QrVariantEntity.fromDomain(config))
+            // Ensure BLPPT string is what scanners expect (also stored as optional mirror).
+            // Keep payload null so generator always uses template ID (admin can override).
+            @Suppress("UNUSED_VARIABLE")
+            val expected = BlpptPayload.fromTemplateId(group.defaultTemplateId)
+        }
     }
 
     suspend fun toggleCourier(courierId: String) {
         val current = courierStatesFlow.currentOrDefault()
         settingsStore.saveUndoSnapshot(current)
-        val next = current.map {
-            if (it.id == courierId) it.copy(isActive = !it.isActive) else it
-        }
-        settingsStore.setCourierStates(next)
+        settingsStore.setCourierStates(
+            current.map { if (it.id == courierId) it.copy(isActive = !it.isActive) else it }
+        )
     }
 
     suspend fun undoLastCourierChange(): Boolean {
@@ -151,9 +253,7 @@ class PickPackRepository(
     suspend fun resetAllActive() {
         val current = courierStatesFlow.currentOrDefault()
         settingsStore.saveUndoSnapshot(current)
-        settingsStore.setCourierStates(
-            current.map { it.copy(isActive = true) }
-        )
+        settingsStore.setCourierStates(current.map { it.copy(isActive = true) })
     }
 
     suspend fun renameCourier(courierId: String, name: String) {
@@ -167,14 +267,45 @@ class PickPackRepository(
         settingsStore.updateSettings(transform)
     }
 
-    suspend fun setPin(pin: String?) = settingsStore.setPin(pin)
+    suspend fun updatePoolFilter(transform: (PoolFilterConfig) -> PoolFilterConfig) {
+        settingsStore.updatePoolFilter(transform)
+    }
 
+    suspend fun setPin(pin: String?) = settingsStore.setPin(pin)
     suspend fun verifyPin(pin: String) = settingsStore.verifyPin(pin)
+
+    fun hasToken(): Boolean = tokenStore.hasToken()
+    fun setToken(token: String?) = tokenStore.setToken(token)
+
+    suspend fun fetchStatuses(): Result<List<BlStatus>> = runCatching {
+        blClient.getOrderStatusList()
+    }
+
+    suspend fun syncNow(): Result<Int> = blPool.syncNow(force = true)
 
     suspend fun upsertVariant(config: QrVariantConfig) = qrProvider.upsertVariant(config)
 
     suspend fun setVariantEnabled(key: QrVariantKey, enabled: Boolean) =
         qrProvider.setEnabled(key, enabled)
+
+    suspend fun setTemplateId(key: QrVariantKey, templateId: Int?) {
+        val existing = qrProvider.getVariant(key)
+        val config = (existing ?: QrVariantConfig(
+            groupId = key.groupId,
+            mask = key.mask,
+            payload = null,
+            enabled = true,
+            isDemo = false,
+            fallbackImagePath = null,
+            sourceLabel = "template ID",
+            templateIdHint = null,
+        )).copy(
+            templateIdHint = templateId,
+            sourceLabel = existing?.sourceLabel ?: "template ID",
+            isDemo = false,
+        )
+        qrProvider.upsertVariant(config)
+    }
 
     suspend fun deleteVariant(key: QrVariantKey) = qrProvider.deleteVariant(key)
 
@@ -194,6 +325,7 @@ class PickPackRepository(
         val groups = db.groupMetaDao().getAll().associate {
             (GroupId.fromStorageKey(it.groupKey) ?: GroupId.PICK_PACK_1) to it.displayName
         }
+        // Secrets never included — ConfigExportImport already skips tokens.
         return ConfigExportImport.exportJson(variants, groups)
     }
 
@@ -214,17 +346,17 @@ class PickPackRepository(
         context.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(dest).use { output -> input.copyTo(output) }
         } ?: error("Nie można odczytać pliku")
-
-        val payload = payloadOverride?.takeIf { it.isNotBlank() }
+        val existing = qrProvider.getVariant(key)
         QrVariantConfig(
             groupId = key.groupId,
             mask = key.mask,
-            payload = payload,
+            payload = payloadOverride?.takeIf { it.isNotBlank() },
             enabled = enabled,
             isDemo = false,
             fallbackImagePath = dest.absolutePath,
             sourceLabel = uri.lastPathSegment ?: "import",
-            templateIdHint = if (key.mask == 7) key.groupId.defaultTemplateId else null,
+            templateIdHint = existing?.templateIdHint
+                ?: if (key.mask == 7) key.groupId.defaultTemplateId else null,
         ).also { qrProvider.upsertVariant(it) }
     }
 
@@ -251,6 +383,7 @@ class PickPackRepository(
                     FileOutputStream(dest).use { out ->
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                     }
+                    val existing = qrProvider.getVariant(key)
                     QrVariantConfig(
                         groupId = key.groupId,
                         mask = key.mask,
@@ -259,7 +392,8 @@ class PickPackRepository(
                         isDemo = false,
                         fallbackImagePath = dest.absolutePath,
                         sourceLabel = "PDF strona ${pageIndex + 1}",
-                        templateIdHint = if (key.mask == 7) key.groupId.defaultTemplateId else null,
+                        templateIdHint = existing?.templateIdHint
+                            ?: if (key.mask == 7) key.groupId.defaultTemplateId else null,
                     ).also { qrProvider.upsertVariant(it) }
                 }
             }
@@ -271,15 +405,17 @@ class PickPackRepository(
         payload: String,
         enabled: Boolean = true,
     ): QrVariantConfig {
+        val existing = qrProvider.getVariant(key)
         val config = QrVariantConfig(
             groupId = key.groupId,
             mask = key.mask,
             payload = payload.trim(),
             enabled = enabled,
             isDemo = false,
-            fallbackImagePath = null,
+            fallbackImagePath = existing?.fallbackImagePath,
             sourceLabel = "wklejona treść",
-            templateIdHint = if (key.mask == 7) key.groupId.defaultTemplateId else null,
+            templateIdHint = existing?.templateIdHint
+                ?: BlpptPayload.tryParseTemplateId(payload),
         )
         qrProvider.upsertVariant(config)
         return config
@@ -293,7 +429,7 @@ class PickPackRepository(
     }
 
     suspend fun maybeDailyReset() {
-        val settings = settingsFlow.currentSettings()
+        val settings = settingsFlow.first()
         if (!settings.dailyResetEnabled) return
         val zone = ZoneId.of(settings.timezoneId)
         val now = java.time.ZonedDateTime.now(zone)
@@ -309,14 +445,13 @@ class PickPackRepository(
 
     fun findDuplicatePayloads(variants: List<QrVariantConfig>): Map<String, List<QrVariantKey>> {
         return variants
-            .filter { !it.payload.isNullOrBlank() }
-            .groupBy { it.payload!!.trim() }
+            .map { it to (BlpptPayload.resolve(it) ?: it.payload?.trim()) }
+            .filter { !it.second.isNullOrBlank() }
+            .groupBy { it.second!! }
             .filter { it.value.size > 1 }
-            .mapValues { (_, list) -> list.map { it.key } }
+            .mapValues { (_, list) -> list.map { it.first.key } }
     }
 
     private suspend fun Flow<List<CourierState>>.currentOrDefault(): List<CourierState> =
         first().ifEmpty { SettingsDataStore.defaultCourierStates() }
-
-    private suspend fun Flow<AppSettings>.currentSettings(): AppSettings = first()
 }

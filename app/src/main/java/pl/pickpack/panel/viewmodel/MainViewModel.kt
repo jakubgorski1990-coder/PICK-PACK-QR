@@ -5,16 +5,15 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import pl.pickpack.panel.PickPackApplication
 import pl.pickpack.panel.data.repository.PickPackRepository
 import pl.pickpack.panel.domain.AppSettings
+import pl.pickpack.panel.domain.BlStatus
 import pl.pickpack.panel.domain.GroupConfig
-import pl.pickpack.panel.domain.GroupId
+import pl.pickpack.panel.domain.PoolFilterConfig
 import pl.pickpack.panel.domain.QrVariantConfig
 import pl.pickpack.panel.domain.QrVariantKey
 
@@ -24,8 +23,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repo: PickPackRepository =
         (application as PickPackApplication).repository
 
-    val panel: StateFlow<PickPackRepository.PanelSnapshot?> =
-        repo.panelFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val panel: StateFlow<PickPackRepository.PanelSnapshot?> = repo.panelFlow
 
     private val _message = MutableStateFlow<UiMessage?>(null)
     val message: StateFlow<UiMessage?> = _message.asStateFlow()
@@ -191,6 +189,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             snapshot.groups.find { it.id == id && it.visible }
         }.ifEmpty {
             snapshot.groups.filter { it.visible }.sortedBy { it.orderIndex }
+        }
+    }
+
+    fun hasToken(): Boolean = repo.hasToken()
+
+    fun saveToken(token: String?) {
+        repo.setToken(token)
+        _message.value = UiMessage(
+            if (token.isNullOrBlank()) "Token usunięty" else "Token zapisany (Keystore)"
+        )
+        // Nudge settings so UI refreshes baselinkerTokenPresent
+        viewModelScope.launch {
+            repo.updateSettings { it }
+            repo.syncNow()
+        }
+    }
+
+    fun updatePoolFilter(transform: (PoolFilterConfig) -> PoolFilterConfig) {
+        viewModelScope.launch { repo.updatePoolFilter(transform) }
+    }
+
+    fun setTemplateId(key: QrVariantKey, templateId: Int?) {
+        viewModelScope.launch {
+            repo.setTemplateId(key, templateId)
+            _message.value = UiMessage(
+                if (templateId == null) "Usunięto template ID"
+                else "Zapisano template ID $templateId"
+            )
+        }
+    }
+
+    fun loadStatuses(onResult: (Result<List<BlStatus>>) -> Unit) {
+        viewModelScope.launch { onResult(repo.fetchStatuses()) }
+    }
+
+    fun syncNow() {
+        viewModelScope.launch {
+            val result = repo.syncNow()
+            _message.value = UiMessage(
+                result.fold(
+                    onSuccess = { "Sync OK — $it zamówień (bez PII)" },
+                    onFailure = { "Sync: ${it.message}" },
+                )
+            )
         }
     }
 }

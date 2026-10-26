@@ -149,6 +149,18 @@ fun GroupQrCard(
                 color = WarehouseAmber,
                 fontSize = 14.sp,
             )
+            is CounterDisplay.Live -> Text(
+                buildString {
+                    append(
+                        if (counter.estimated) "Szacowana liczba w puli: "
+                        else "Liczba w puli: "
+                    )
+                    append(counter.waiting)
+                    counter.error?.let { append(" · $it") }
+                },
+                color = if (counter.error != null) WarehouseRed else WarehouseAmber,
+                fontSize = 14.sp,
+            )
         }
     }
 }

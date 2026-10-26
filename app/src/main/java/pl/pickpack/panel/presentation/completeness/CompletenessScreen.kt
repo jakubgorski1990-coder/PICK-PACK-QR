@@ -17,7 +17,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,11 +33,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pickpack.panel.data.DemoContent
+import pl.pickpack.panel.domain.BlpptPayload
 import pl.pickpack.panel.domain.QrSelectionLogic
 import pl.pickpack.panel.domain.QrVariantConfig
 import pl.pickpack.panel.domain.QrVariantKey
@@ -71,8 +75,12 @@ fun CompletenessScreen(
             TextButton(onClick = onBack) { Text("← Ustawienia") }
             Text("Kompletność 14 wariantów", color = WarehouseAmber, fontSize = 22.sp)
         }
+        val readyCount = keys.count { key ->
+            val c = byKey[key] ?: return@count false
+            c.enabled && (!BlpptPayload.resolve(c).isNullOrBlank() || !c.fallbackImagePath.isNullOrBlank())
+        }
         Text(
-            "Gotowe: ${byKey.size}/14 produkcyjnych" +
+            "Gotowe: $readyCount/14 (template ID → BLPPT_…)" +
                 if (snapshot.settings.demoMode) " · DEMO aktywne (nie zastępuje braków produkcyjnych)" else "",
             color = Color.White,
             fontSize = 14.sp,
@@ -97,24 +105,28 @@ fun CompletenessScreen(
         ) {
             items(keys, key = { "${it.groupId.storageKey}:${it.mask}" }) { key ->
                 val config = byKey[key]
+                val resolved = config?.let { BlpptPayload.resolve(it) }
                 val ok = config != null && config.enabled &&
-                    (!config.payload.isNullOrBlank() || !config.fallbackImagePath.isNullOrBlank())
+                    (!resolved.isNullOrBlank() || !config.fallbackImagePath.isNullOrBlank())
+                var templateText by remember(key, config?.templateIdHint) {
+                    mutableStateOf(config?.templateIdHint?.toString().orEmpty())
+                }
                 Column(
                     modifier = Modifier
                         .background(WarehouseSlate, RoundedCornerShape(8.dp))
                         .padding(10.dp),
                 ) {
                     Text(
-                        "${key.groupId.defaultName}",
+                        key.groupId.defaultName,
                         color = WarehouseAmber,
                         fontSize = 13.sp,
                     )
                     Text(key.label(), color = Color.White, fontSize = 14.sp)
                     Text(
                         when {
-                            ok -> "OK"
+                            ok -> "OK · ${resolved ?: "obraz"}"
                             config != null && !config.enabled -> "WYŁĄCZONY"
-                            else -> "BRAK"
+                            else -> "BRAK template ID"
                         },
                         color = when {
                             ok -> WarehouseGreen
@@ -123,6 +135,20 @@ fun CompletenessScreen(
                         },
                         fontSize = 12.sp,
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = templateText,
+                            onValueChange = { templateText = it.filter { ch -> ch.isDigit() } },
+                            label = { Text("Template ID") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Button(onClick = {
+                            viewModel.setTemplateId(key, templateText.toIntOrNull())
+                        }) { Text("ID") }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (config != null) {
                             Text("Włącz", color = Color.White, fontSize = 12.sp)
@@ -144,6 +170,7 @@ fun CompletenessScreen(
                                         isDemo = false,
                                         fallbackImagePath = null,
                                         sourceLabel = null,
+                                        templateIdHint = templateText.toIntOrNull(),
                                     )
                             },
                         ) { Text("Podgląd") }
@@ -189,7 +216,8 @@ private fun PreviewDialog(
             )
             Spacer(Modifier.height(8.dp))
             val bmp = remember(config) {
-                config.payload?.let { encodeQr(it) } ?: loadFallback(config.fallbackImagePath)
+                BlpptPayload.resolve(config)?.let { encodeQr(it) }
+                    ?: loadFallback(config.fallbackImagePath)
             }
             if (bmp != null) {
                 Image(

@@ -6,8 +6,8 @@ package pl.pickpack.panel.domain
  * Rules:
  * - Active courier set → exact mask match among 7 variants (never a “similar” one).
  * - Empty active set → [QrDisplayState.AllPickedUp] (hide QR).
- * - Missing / disabled / corrupt configured variant → [QrDisplayState.Missing] immediately
- *   (previous QR must not remain).
+ * - Missing / disabled / corrupt configured variant → [QrDisplayState.Missing] immediately.
+ * - Production payload = manual override OR BLPPT_ from template ID; never DEMO for missing ID.
  */
 object QrSelectionLogic {
 
@@ -26,7 +26,7 @@ object QrSelectionLogic {
             return resolveConfigured(key, configured)
         }
 
-        // Demo never substitutes for missing production codes.
+        // Demo only when explicitly enabled — never silent substitute for missing production ID.
         if (demoMode) {
             val demo = demoVariants[key.mask]
             if (demo != null) {
@@ -41,20 +41,24 @@ object QrSelectionLogic {
         if (!config.enabled) {
             return QrDisplayState.Missing(key.groupId, key, MissingReason.DISABLED)
         }
-        val payload = config.payload?.trim().orEmpty()
-        if (payload.isEmpty() && config.fallbackImagePath.isNullOrBlank()) {
-            return QrDisplayState.Missing(key.groupId, key, MissingReason.CORRUPT)
+        val payload = BlpptPayload.resolve(config)
+        if (payload.isNullOrBlank() && config.fallbackImagePath.isNullOrBlank()) {
+            val reason = if (config.templateIdHint == null && config.payload.isNullOrBlank()) {
+                MissingReason.NOT_CONFIGURED
+            } else {
+                MissingReason.CORRUPT
+            }
+            return QrDisplayState.Missing(key.groupId, key, reason)
         }
         return QrDisplayState.Ready(
             variantKey = key,
-            payload = payload.ifEmpty { "IMAGE_FALLBACK" },
+            payload = payload?.ifBlank { null } ?: "IMAGE_FALLBACK",
             isDemo = config.isDemo,
             fallbackImagePath = config.fallbackImagePath,
             templateIdHint = config.templateIdHint,
         )
     }
 
-    /** All 14 variant keys (7 × 2 groups). */
     fun allVariantKeys(): List<QrVariantKey> =
         GroupId.entries.flatMap { QrVariantKey.allForGroup(it) }
 }
