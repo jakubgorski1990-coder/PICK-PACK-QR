@@ -228,6 +228,102 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
+        SectionTitle("IMIENNE")
+        Text(
+            "Zakładka / swipe L–P · QR max duże · auto-powrót do Pick/Pack po bezczynności.",
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
+        var timeoutText by remember(snapshot.settings.imienneTimeoutSec) {
+            mutableStateOf(snapshot.settings.imienneTimeoutSec.toString())
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = timeoutText,
+                onValueChange = { timeoutText = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Timeout IMIENNE (s), domyślnie 15") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(260.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = {
+                val sec = timeoutText.toIntOrNull()?.coerceIn(5, 300) ?: 15
+                viewModel.updateSettings { it.copy(imienneTimeoutSec = sec) }
+            }) { Text("Zapisz") }
+        }
+        Spacer(Modifier.height(8.dp))
+        var newName by remember { mutableStateOf("") }
+        var newTemplate by remember { mutableStateOf("") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = newName,
+                onValueChange = { newName = it },
+                label = { Text("Imię / nazwa") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = newTemplate,
+                onValueChange = { newTemplate = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Template ID (np. 18472)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = {
+                viewModel.addNamedPerson(newName, newTemplate)
+                newName = ""
+                newTemplate = ""
+            }) { Text("Dodaj") }
+        }
+        Text(
+            "Treść QR: BLPPT_ + ID dopełnione do 6 cyfr (wpisz samo 18472).",
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
+        snapshot.namedEntries.filter { !it.isDemo }.forEach { entry ->
+            var name by remember(entry.id, entry.displayName) { mutableStateOf(entry.displayName) }
+            var tid by remember(entry.id, entry.templateId) {
+                mutableStateOf(entry.templateId?.toString().orEmpty())
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nazwa") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                )
+                Spacer(Modifier.width(6.dp))
+                OutlinedTextField(
+                    value = tid,
+                    onValueChange = { tid = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("ID") },
+                    modifier = Modifier.width(120.dp),
+                    singleLine = true,
+                )
+                TextButton(onClick = { viewModel.moveNamedPerson(entry.id, -1) }) { Text("↑") }
+                TextButton(onClick = { viewModel.moveNamedPerson(entry.id, 1) }) { Text("↓") }
+                Button(onClick = {
+                    viewModel.updateNamedPerson(
+                        entry.copy(
+                            displayName = name.trim(),
+                            templateId = tid.toIntOrNull(),
+                        )
+                    )
+                }) { Text("Zapisz") }
+                TextButton(onClick = { viewModel.deleteNamedPerson(entry.id) }) { Text("Usuń") }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
         SectionTitle("BaseLinker")
         Text(
             "QR = BLPPT_ + ID (6 cyfr). Prefill pełnych zestawów: " +

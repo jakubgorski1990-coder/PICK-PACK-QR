@@ -27,4 +27,14 @@ object BlpptPayload {
         val id = config.templateIdHint ?: return null
         return fromTemplateId(id)
     }
+
+    fun resolveNamed(entry: NamedQrEntry): String? = entry.resolvedPayload()
+
+    /** Accept plain number (18472) or already-padded / BLPPT_ string → template ID. */
+    fun parseFlexibleTemplateId(raw: String): Int? {
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        tryParseTemplateId(t)?.let { return it }
+        return t.toIntOrNull()?.takeIf { it > 0 }
+    }
 }

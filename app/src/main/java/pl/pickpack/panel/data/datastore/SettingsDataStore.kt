@@ -41,6 +41,7 @@ class SettingsDataStore(private val context: Context) {
         val alertThreshold = booleanPreferencesKey("alert_threshold")
         val ttsEnabled = booleanPreferencesKey("tts_enabled")
         val poolFilterJson = stringPreferencesKey("pool_filter_json")
+        val imienneTimeoutSec = intPreferencesKey("imienne_timeout_sec")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -72,6 +73,7 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.alertThreshold] = next.alertThresholdEnabled
             prefs[Keys.ttsEnabled] = next.ttsEnabled
             prefs[Keys.poolFilterJson] = encodePoolFilter(next.poolFilter)
+            prefs[Keys.imienneTimeoutSec] = next.imienneTimeoutSec.coerceIn(5, 300)
         }
     }
 
@@ -175,6 +177,7 @@ class SettingsDataStore(private val context: Context) {
                 ttsEnabled = this[Keys.ttsEnabled] ?: false,
                 poolFilter = pool,
                 counterConfigured = pool.isCounterRulesReady(),
+                imienneTimeoutSec = this[Keys.imienneTimeoutSec] ?: 15,
             )
         }
 

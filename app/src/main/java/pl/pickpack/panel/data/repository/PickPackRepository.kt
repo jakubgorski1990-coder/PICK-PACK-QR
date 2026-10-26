@@ -26,6 +26,7 @@ import pl.pickpack.panel.data.QrBitmapEncoder
 import pl.pickpack.panel.data.baselinker.BaseLinkerClient
 import pl.pickpack.panel.data.datastore.SettingsDataStore
 import pl.pickpack.panel.data.entity.GroupMetaEntity
+import pl.pickpack.panel.data.entity.NamedQrEntity
 import pl.pickpack.panel.data.entity.QrVariantEntity
 import pl.pickpack.panel.data.provider.BaselinkerOrderPoolProvider
 import pl.pickpack.panel.data.provider.DemoOrderPoolProvider
@@ -39,6 +40,7 @@ import pl.pickpack.panel.domain.CounterDisplay
 import pl.pickpack.panel.domain.CourierState
 import pl.pickpack.panel.domain.GroupConfig
 import pl.pickpack.panel.domain.GroupId
+import pl.pickpack.panel.domain.NamedQrEntry
 import pl.pickpack.panel.domain.PoolFilterConfig
 import pl.pickpack.panel.domain.QrDisplayState
 import pl.pickpack.panel.domain.QrSelectionLogic
@@ -49,6 +51,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 
 class PickPackRepository(
     private val context: Context,
@@ -108,7 +111,11 @@ class PickPackRepository(
         val counters: Map<GroupId, CounterDisplay>,
         val connectionLabel: String,
         val syncState: SyncState,
+        val namedEntries: List<NamedQrEntry> = emptyList(),
     )
+
+    private val namedProductionFlow: Flow<List<NamedQrEntry>> =
+        db.namedQrDao().observeProduction().map { list -> list.map { it.toDomain() } }
 
     private val panelSource = combine(
         settingsFlow,
@@ -154,7 +161,14 @@ class PickPackRepository(
     }
 
     val panelFlow: StateFlow<PanelSnapshot?> =
-        panelSource.stateIn(scope, SharingStarted.Eagerly, null)
+        combine(panelSource, namedProductionFlow) { snap, named ->
+            val displayNamed = when {
+                // DEMO only when mode on and no production named entries — never silent substitute.
+                snap.settings.demoMode && named.isEmpty() -> DemoContent.namedEntries()
+                else -> named
+            }
+            snap.copy(namedEntries = displayNamed)
+        }.stateIn(scope, SharingStarted.Eagerly, null)
 
     init {
         scope.launch {
@@ -325,14 +339,53 @@ class PickPackRepository(
         val groups = db.groupMetaDao().getAll().associate {
             (GroupId.fromStorageKey(it.groupKey) ?: GroupId.PICK_PACK_1) to it.displayName
         }
-        // Secrets never included — ConfigExportImport already skips tokens.
-        return ConfigExportImport.exportJson(variants, groups)
+        val named = db.namedQrDao().getProduction().map { it.toDomain() }
+        return ConfigExportImport.exportJson(variants, groups, named)
     }
 
     suspend fun importConfig(json: String): Int {
-        val imported = ConfigExportImport.importJson(json)
-        imported.forEach { qrProvider.upsertVariant(it) }
-        return imported.size
+        val bundle = ConfigExportImport.importJson(json)
+        bundle.variants.forEach { qrProvider.upsertVariant(it) }
+        bundle.namedEntries.forEach { upsertNamedEntry(it) }
+        return bundle.variants.size + bundle.namedEntries.size
+    }
+
+    suspend fun upsertNamedEntry(entry: NamedQrEntry) {
+        val clean = entry.copy(isDemo = false)
+        db.namedQrDao().upsert(NamedQrEntity.fromDomain(clean))
+    }
+
+    suspend fun deleteNamedEntry(id: String) {
+        db.namedQrDao().delete(id)
+    }
+
+    suspend fun addNamedEntry(displayName: String, templateIdRaw: String, payloadOverride: String? = null) {
+        val templateId = BlpptPayload.parseFlexibleTemplateId(templateIdRaw)
+        val existing = db.namedQrDao().getProduction()
+        val nextOrder = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
+        upsertNamedEntry(
+            NamedQrEntry(
+                id = UUID.randomUUID().toString(),
+                displayName = displayName.trim(),
+                templateId = templateId,
+                payloadOverride = payloadOverride?.trim()?.takeIf { it.isNotEmpty() },
+                orderIndex = nextOrder,
+                isDemo = false,
+            )
+        )
+    }
+
+    suspend fun moveNamedEntry(id: String, delta: Int) {
+        val list = db.namedQrDao().getProduction().map { it.toDomain() }.toMutableList()
+        val idx = list.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        val target = (idx + delta).coerceIn(0, list.lastIndex)
+        if (target == idx) return
+        val item = list.removeAt(idx)
+        list.add(target, item)
+        list.forEachIndexed { i, e ->
+            db.namedQrDao().upsert(NamedQrEntity.fromDomain(e.copy(orderIndex = i)))
+        }
     }
 
     suspend fun importImageAsVariant(

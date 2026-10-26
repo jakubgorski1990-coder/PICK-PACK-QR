@@ -148,7 +148,53 @@ data class AppSettings(
     val alertThresholdEnabled: Boolean = false,
     val ttsEnabled: Boolean = false,
     val poolFilter: PoolFilterConfig = PoolFilterConfig(),
+    /** Idle seconds on IMIENNE before auto-return to Pick/Pack (default 15). */
+    val imienneTimeoutSec: Int = 15,
 )
+
+/**
+ * Named (IMIENNE) QR entry — one person / one template.
+ * Payload = optional override, else BLPPT_ + padded templateId.
+ */
+data class NamedQrEntry(
+    val id: String,
+    val displayName: String,
+    val templateId: Int?,
+    val payloadOverride: String? = null,
+    val orderIndex: Int = 0,
+    val isDemo: Boolean = false,
+) {
+    fun resolvedPayload(): String? {
+        payloadOverride?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val idNum = templateId ?: return null
+        return BlpptPayload.fromTemplateId(idNum)
+    }
+}
+
+/** Landscape grid dims that fit [count] cells and maximize QR size. */
+object ImienneGridLayout {
+    fun dimensions(count: Int, viewportAspect: Float = 16f / 9f): Pair<Int, Int> {
+        val n = count.coerceAtLeast(1)
+        var bestCols = n
+        var bestRows = 1
+        var bestScore = -1.0
+        for (cols in 1..n) {
+            val rows = (n + cols - 1) / cols
+            // Approximate cell aspect under landscape: wider viewport → prefer more cols
+            val cellAspect = (viewportAspect * rows) / cols
+            // Prefer near-square cells (QR likes square); score = how close to 1
+            val squareScore = 1.0 / (1.0 + kotlin.math.abs(cellAspect - 1.0))
+            val areaScore = 1.0 / (cols * rows) // fewer empty slots slightly better via tighter pack
+            val score = squareScore * 10 + areaScore
+            if (score > bestScore) {
+                bestScore = score
+                bestCols = cols
+                bestRows = rows
+            }
+        }
+        return bestCols to bestRows
+    }
+}
 
 /** Counter display for a group panel. */
 sealed class CounterDisplay {

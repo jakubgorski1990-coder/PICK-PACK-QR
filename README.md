@@ -35,6 +35,15 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 
 Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same statusy + metody dostawy aktywnych kurierów). Różnice są oczekiwane, jeśli szablon dobierania ma dodatkowe reguły niedostępne w API.
 
+## Zakładka IMIENNE
+
+- U góry: **Pick / Pack** | **IMIENNE** — także **swipe w lewo/prawo**.
+- Siatka QR (model na ≥12 i więcej) — kody **maksymalnie duże**, nazwy małe; wszystko na jednym landscape.
+- Treść: `BLPPT_` + template ID dopełnione do 6 cyfr (wpisz samo `18472`).
+- **Dodawanie osoby:** Ustawienia → sekcja IMIENNE → Imię/nazwa + Template ID → Dodaj. Edycja / kolejność / usuwanie w tej samej sekcji.
+- Po **15 s** bezczynności na IMIENNE (konfigurowalne) auto-powrót do Pick/Pack. Interakcja resetuje timer.
+- Persist Room; eksport/import JSON uwzględnia listę imiennych (bez tokenu). DEMO nie podstawia braków produkcyjnych.
+
 ## Etap 1 (nadal)
 
 Landscape PL, 6 kurierów, dokładne maski 1–7, import PNG/JPG/PDF, DEMO, PIN, persistencja.
@@ -45,4 +54,4 @@ Pełne alerty progowe 5/10/15/20 + TTS.
 
 ## Testy wymagające tabletu
 
-Skan BLPPT_ kolektorem, landscape, sync na Wi‑Fi hali, import SAF, keep-screen-on, PIN.
+Skan BLPPT_ kolektorem, landscape, swipe IMIENNE, timeout 15s, sync Wi‑Fi, import SAF, keep-screen-on, PIN.

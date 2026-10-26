@@ -12,10 +12,13 @@ import pl.pickpack.panel.PickPackApplication
 import pl.pickpack.panel.data.repository.PickPackRepository
 import pl.pickpack.panel.domain.AppSettings
 import pl.pickpack.panel.domain.BlStatus
+import pl.pickpack.panel.domain.BlpptPayload
 import pl.pickpack.panel.domain.GroupConfig
+import pl.pickpack.panel.domain.NamedQrEntry
 import pl.pickpack.panel.domain.PoolFilterConfig
 import pl.pickpack.panel.domain.QrVariantConfig
 import pl.pickpack.panel.domain.QrVariantKey
+import java.util.UUID
 
 data class UiMessage(val text: String, val id: Long = System.currentTimeMillis())
 
@@ -235,4 +238,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
+    fun addNamedPerson(displayName: String, templateIdRaw: String) {
+        viewModelScope.launch {
+            if (displayName.isBlank()) {
+                _message.value = UiMessage("Podaj nazwę")
+                return@launch
+            }
+            if (BlpptPayload.parseFlexibleTemplateId(templateIdRaw) == null &&
+                templateIdRaw.isNotBlank()
+            ) {
+                _message.value = UiMessage("Nieprawidłowy template ID")
+                return@launch
+            }
+            repo.addNamedEntry(displayName, templateIdRaw)
+            _message.value = UiMessage("Dodano: $displayName")
+        }
+    }
+
+    fun updateNamedPerson(entry: NamedQrEntry) {
+        viewModelScope.launch {
+            repo.upsertNamedEntry(entry.copy(isDemo = false))
+            _message.value = UiMessage("Zapisano ${entry.displayName}")
+        }
+    }
+
+    fun deleteNamedPerson(id: String) {
+        viewModelScope.launch {
+            repo.deleteNamedEntry(id)
+            _message.value = UiMessage("Usunięto wpis imienny")
+        }
+    }
+
+    fun moveNamedPerson(id: String, delta: Int) {
+        viewModelScope.launch { repo.moveNamedEntry(id, delta) }
+    }
+
+    fun newNamedDraft(name: String, templateId: Int?, order: Int) = NamedQrEntry(
+        id = UUID.randomUUID().toString(),
+        displayName = name,
+        templateId = templateId,
+        orderIndex = order,
+    )
 }
