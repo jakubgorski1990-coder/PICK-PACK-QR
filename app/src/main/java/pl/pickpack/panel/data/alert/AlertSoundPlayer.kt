@@ -2,6 +2,7 @@ package pl.pickpack.panel.data.alert
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
@@ -10,6 +11,9 @@ import java.util.ArrayDeque
 
 /**
  * Shared FIFO audio queue for imienny + kurier alerts. Never overlaps tracks.
+ *
+ * Uses [AudioAttributes.USAGE_MEDIA] (STREAM_MUSIC) so playback follows media volume
+ * and is not silenced by ringer/notification mute on tablets.
  */
 class AlertSoundPlayer(context: Context) {
     private val appContext = context.applicationContext
@@ -67,18 +71,20 @@ class AlertSoundPlayer(context: Context) {
         playing = true
         try {
             releasePlayer()
-            val mp = MediaPlayer.create(appContext, next)
-            if (mp == null) {
-                playing = false
-                playNextLocked()
-                return
-            }
+            // Must set AudioAttributes BEFORE prepare — MediaPlayer.create() prepares
+            // first, so setAudioAttributes after create throws IllegalStateException
+            // (was swallowed → silent failure for all alerts).
+            val mp = MediaPlayer()
             mp.setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setLegacyStreamType(AudioManager.STREAM_MUSIC)
                     .build()
             )
+            appContext.resources.openRawResourceFd(next).use { afd ->
+                mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            }
             mp.setOnCompletionListener {
                 releasePlayer()
                 playing = false
@@ -90,6 +96,8 @@ class AlertSoundPlayer(context: Context) {
                 playNextLocked()
                 true
             }
+            mp.prepare()
+            mp.setVolume(1f, 1f)
             player = mp
             mp.start()
         } catch (_: Exception) {
