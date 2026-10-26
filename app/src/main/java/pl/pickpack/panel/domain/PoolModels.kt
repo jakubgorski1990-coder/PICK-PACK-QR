@@ -1,14 +1,19 @@
 package pl.pickpack.panel.domain
 
 /**
- * Read-only pool filter rules using only filters available in BaseLinker API
- * (status_id, confirmed flag, delivery_method / delivery_method_id).
- * Cannot recreate full pick/pack template reservation → counts are estimated.
+ * Pick/Pack pool filter using only BaseLinker getOrders capabilities:
+ * - `status_id` (API input) — pick-pool queue statuses
+ * - `get_unconfirmed_orders` / confirmed
+ * - delivery_method_id / delivery_method (response only — no delivery input filter)
+ *
+ * Counter modes:
+ * - **Start variant** (wszyscy kurierzy aktywni, mask 7): count = orders in status_id puli
+ * - **Partial variants**: count = status_id cache ∩ delivery aktywnych kurierów („Szacowana…”)
  */
 data class PoolFilterConfig(
     val syncIntervalSec: Int = 60,
     val onlyConfirmed: Boolean = true,
-    /** Status IDs treated as “waiting in pool”. Empty → counter not configured. */
+    /** Status IDs of the pick-pool queue (getOrders status_id). */
     val statusIds: List<Int> = emptyList(),
     val deliveryMappings: List<DeliveryMapping> = emptyList(),
     /** Estimated-count alerts stay off by default (Etap 3). */
@@ -92,7 +97,41 @@ data class NamedAlertState(
     val lastPlayedEpochMs: Long? = null,
     val lastCheckEpochMs: Long? = null,
     val lastError: String? = null,
+    /**
+     * Orders currently in each named status_id (from getOrders).
+     * Empty map when never synced / error — do not treat as all zeros on error.
+     */
+    val countsByStatusId: Map<Int, Int> = emptyMap(),
+    val countsReliable: Boolean = false,
 )
+
+/** Pure helpers for named-status order counts (status_id). */
+object NamedStatusCountLogic {
+    fun countsByStatusId(orders: List<PoolOrder>, statusIds: Collection<Int>): Map<Int, Int> {
+        val wanted = statusIds.toSet()
+        if (wanted.isEmpty()) return emptyMap()
+        val seen = HashSet<Long>()
+        val counts = wanted.associateWith { 0 }.toMutableMap()
+        for (o in orders) {
+            if (o.statusId !in wanted) continue
+            if (!seen.add(o.orderId)) continue
+            counts[o.statusId] = (counts[o.statusId] ?: 0) + 1
+        }
+        return counts
+    }
+
+    /** Match imienne QR display name → status count when names align. */
+    fun countForDisplayName(
+        displayName: String,
+        statuses: List<NamedStatusRef>,
+        countsByStatusId: Map<Int, Int>,
+    ): Int? {
+        val needle = displayName.trim().lowercase()
+        if (needle.isEmpty()) return null
+        val ref = statuses.firstOrNull { it.displayName.trim().lowercase() == needle } ?: return null
+        return countsByStatusId[ref.statusId]
+    }
+}
 
 data class BlStatus(
     val id: Int,

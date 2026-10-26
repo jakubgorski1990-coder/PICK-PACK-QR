@@ -21,7 +21,7 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 1. **Token** — Ustawienia → „Konfiguracja API / filtrów / sync” → wklej token z panelu BL (*Account & other → My account → API*). Zapis w Android Keystore / EncryptedSharedPreferences. **Nigdy** w repo, logach ani eksporcie JSON.
 2. **Template ID (14 wariantów)** — Kompletność 14: pole Template ID. Prefill pełnych zestawów: Pick/Pack 1 maska „wszyscy” = **18472**, Pick/Pack 2 = **18173**. Pozostałe 12 ID wpisuje admin.
 3. **Treść QR** — lokalnie: `BLPPT_` + ID dopełnione do 6 cyfr (np. `BLPPT_018472`). Override treści / import obrazu nadal możliwy.
-4. **Licznik** — wybierz `status_id` (lista z `getOrderStatusList`), zmapuj `delivery_method_id` / fragment nazwy → kurier, ustaw interwał (domyślnie 60 s). Sync: `getOrders` + paginacja, dedup `order_id`, bez nakładających się sync, backoff.
+4. **Licznik Pick/Pack** — sync `getOrders` po `status_id` puli + mapowanie `delivery_method_id`/nazwa → kurier. **Wariant startowy** (wszyscy kurierzy, mask 7 / szablony 18472·18173): count ze `status_id`. **Pozostałe warianty**: count z filtrów delivery aktywnych kurierów (API nie filtruje po delivery ani szablonie → „Szacowana…”). Paginacja, dedup `order_id`, backoff.
 
 ## Ograniczenia API
 
@@ -48,9 +48,10 @@ Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same stat
 
 - Plik lokalny: `res/raw/uwaga_imienny_status.mp3` („UWAGA w imiennym statusie pozostały zamówienia”).
 - Ustawienia → **Alert głosowy — statusy imienne**: lista `statusId` + imię (seed 10 statusów BL), próg minut (default **30**), cooldown (default **10**), włącz/wyłącz, test dźwięku.
+- **Mały licznik** przy każdym statusie imiennym = ile zamówień jest w tym `status_id` (pasek na IMIENNE + ustawienia; przy QR jeśli nazwa = status).
 - Co sync (ten sam token / `getOrders`): jeśli **jakiekolwiek** zamówienie w którymś statusie imiennym ma wiek w statusie **> próg**, odtwarzany jest MP3 (bez nakładania).
 - **Pole daty:** `date_in_status` (czas wejścia do bieżącego statusu). Fallback: `date_confirmed` → `date_add`. Brak daty → zamówienie nie liczy się do alertu.
-- Błąd API / brak tokena → **bez** dźwięku (błąd ≠ zero zamówień).
+- Błąd API / brak tokena → **bez** dźwięku (błąd ≠ zero zamówień / zero liczników).
 - Wskaźnik na pasku: „⚠ Imienny (N)” gdy warunek aktywny.
 
 ## Dźwięk przycisków kuriera

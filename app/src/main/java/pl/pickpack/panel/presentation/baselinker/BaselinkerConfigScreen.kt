@@ -99,7 +99,13 @@ fun BaselinkerConfigScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("Statusy puli (status_id z getOrderStatusList)", color = WarehouseAmber)
+        Text("Statusy puli (status_id — kolejka pick)", color = WarehouseAmber)
+        Text(
+            "Wariant startowy (wszyscy kurierzy): licznik = count z tych status_id. " +
+                "Wariant z wyłączonym kurierem: licznik = filtr delivery aktywnych (nie sam status_id).",
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
         OutlinedTextField(
             value = statusIdsText,
             onValueChange = { statusIdsText = it },
@@ -179,7 +185,8 @@ fun BaselinkerConfigScreen(
         Spacer(Modifier.height(16.dp))
         Text("Mapowanie dostawy → kurier", color = WarehouseAmber)
         Text(
-            "delivery_method_id i/lub fragment nazwy (getOrders). Licznik = szacunek — API nie filtruje po szablonie dobierania.",
+            "delivery_method_id i/lub fragment nazwy (pole odpowiedzi getOrders — API nie ma filtra wejściowego delivery). " +
+                "Używane gdy nie wszyscy kurierzy aktywni. Szablon dobierania niedostępny w API → szacunek.",
             color = Color.Gray,
             fontSize = 12.sp,
         )

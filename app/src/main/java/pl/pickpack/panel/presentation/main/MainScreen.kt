@@ -179,6 +179,9 @@ fun MainScreen(
                             demoBanner = snapshot.namedEntries.any { it.isDemo },
                             encodeQr = viewModel::encodeQr,
                             modifier = Modifier.fillMaxSize(),
+                            namedStatuses = snapshot.settings.namedStatusAlert.statuses,
+                            countsByStatusId = snapshot.namedAlert.countsByStatusId,
+                            countsReliable = snapshot.namedAlert.countsReliable,
                         )
                     }
                 }
