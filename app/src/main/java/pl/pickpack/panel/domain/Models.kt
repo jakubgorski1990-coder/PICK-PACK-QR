@@ -152,6 +152,8 @@ data class AppSettings(
     val imienneTimeoutSec: Int = 15,
     val namedStatusAlert: NamedStatusAlertConfig = NamedStatusAlertConfig(),
     val courierDeadlines: CourierDeadlineConfig = CourierDeadlineConfig(),
+    /** Sound on courier button toggle (Odebrane / Czeka na odbiór). */
+    val courierToggleSoundEnabled: Boolean = true,
 )
 
 /**

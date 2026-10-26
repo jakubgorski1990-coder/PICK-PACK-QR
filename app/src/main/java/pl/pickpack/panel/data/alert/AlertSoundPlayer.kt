@@ -20,6 +20,15 @@ class AlertSoundPlayer(context: Context) {
 
     fun enqueueUwagaImienny() = enqueue(R.raw.uwaga_imienny_status)
 
+    fun enqueueOdebrano() = enqueue(R.raw.odebrano)
+
+    fun enqueueCzekaNaOdbior() = enqueue(R.raw.czeka_na_odbior)
+
+    /** Play sound for new courier button state (isActive = czeka / else odebrano). */
+    fun enqueueCourierToggle(nowActive: Boolean) {
+        if (nowActive) enqueueCzekaNaOdbior() else enqueueOdebrano()
+    }
+
     fun enqueueKurier(courierId: String): Boolean {
         val res = kurierRawRes(courierId) ?: return false
         enqueue(res)

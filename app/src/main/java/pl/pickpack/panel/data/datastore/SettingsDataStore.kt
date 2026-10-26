@@ -50,6 +50,7 @@ class SettingsDataStore(private val context: Context) {
         val namedStatusSeeded = booleanPreferencesKey("named_status_seeded")
         val courierDeadlinesJson = stringPreferencesKey("courier_deadlines_json")
         val courierDeadlinePlayedJson = stringPreferencesKey("courier_deadline_played_json")
+        val courierToggleSound = booleanPreferencesKey("courier_toggle_sound")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -88,6 +89,7 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.imienneTimeoutSec] = next.imienneTimeoutSec.coerceIn(5, 300)
             prefs[Keys.namedStatusAlertJson] = encodeNamedStatusAlert(next.namedStatusAlert)
             prefs[Keys.courierDeadlinesJson] = encodeCourierDeadlines(next.courierDeadlines)
+            prefs[Keys.courierToggleSound] = next.courierToggleSoundEnabled
         }
     }
 
@@ -242,6 +244,7 @@ class SettingsDataStore(private val context: Context) {
                 imienneTimeoutSec = this[Keys.imienneTimeoutSec] ?: 15,
                 namedStatusAlert = parseNamedStatusAlert(this[Keys.namedStatusAlertJson]),
                 courierDeadlines = parseCourierDeadlines(this[Keys.courierDeadlinesJson]),
+                courierToggleSoundEnabled = this[Keys.courierToggleSound] ?: true,
             )
         }
 

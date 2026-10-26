@@ -184,6 +184,13 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
+        SettingSwitch(
+            label = "Dźwięk przy przełączaniu kuriera (Odebrane / Czeka)",
+            checked = snapshot.settings.courierToggleSoundEnabled,
+            onChange = { v -> viewModel.updateSettings { it.copy(courierToggleSoundEnabled = v) } },
+        )
+
+        Spacer(Modifier.height(16.dp))
         SectionTitle("Godzina graniczna kuriera (Europe/Warsaw)")
         Text(
             "Audio −30 min i −25 min przed godziną (1× na slot/dzień). Kolejka wspólna z alertem imiennym.",

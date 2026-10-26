@@ -362,10 +362,15 @@ class PickPackRepository(
 
     suspend fun toggleCourier(courierId: String) {
         val current = courierStatesFlow.currentOrDefault()
+        val target = current.find { it.id == courierId } ?: return
+        val nowActive = !target.isActive
         settingsStore.saveUndoSnapshot(current)
         settingsStore.setCourierStates(
-            current.map { if (it.id == courierId) it.copy(isActive = !it.isActive) else it }
+            current.map { if (it.id == courierId) it.copy(isActive = nowActive) else it }
         )
+        if (settingsFlow.first().courierToggleSoundEnabled) {
+            alertPlayer.enqueueCourierToggle(nowActive)
+        }
     }
 
     suspend fun undoLastCourierChange(): Boolean {
