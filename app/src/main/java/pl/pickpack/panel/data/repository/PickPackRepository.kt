@@ -49,9 +49,11 @@ import pl.pickpack.panel.domain.CourierDeadlineConfig
 import pl.pickpack.panel.domain.CourierDeadlineLogic
 import pl.pickpack.panel.domain.NamedStatusAlertConfig
 import pl.pickpack.panel.domain.NamedStatusAlertLogic
+import pl.pickpack.panel.domain.NamedStatusCountLogic
 import pl.pickpack.panel.domain.NamedStatusRef
 import pl.pickpack.panel.domain.PoolFilterConfig
 import pl.pickpack.panel.domain.PoolOrder
+import pl.pickpack.panel.domain.DefaultCouriers
 import pl.pickpack.panel.domain.QrDisplayState
 import pl.pickpack.panel.domain.QrSelectionLogic
 import pl.pickpack.panel.domain.QrVariantConfig
@@ -215,17 +217,37 @@ class PickPackRepository(
         val configured = settings.baselinkerTokenPresent && settings.poolFilter.isCounterRulesReady()
         if (!configured) return CounterDisplay.NotConfigured
         val active = couriers.filter { it.groupId == groupId && it.isActive }.map { it.id }.toSet()
-        val waiting = BaselinkerOrderPoolProvider.countMatching(
-            orders = blPool.cachedOrders(),
-            mappings = settings.poolFilter.deliveryMappings,
-            activeCourierIds = active,
-            onlyConfirmed = settings.poolFilter.onlyConfirmed,
-        )
+        val groupCourierIds = DefaultCouriers.forGroup(groupId).map { it.id }.toSet()
+        val allActive = active == groupCourierIds && active.isNotEmpty()
+        val variantKey = QrVariantKey.fromActiveCouriers(groupId, active)
+        val orders = blPool.cachedOrders()
+        val onlyConfirmed = settings.poolFilter.onlyConfirmed
+        // Start variant (mask 7 / wszyscy aktywni, szablony 18472/18173): count by status_id.
+        // Partial variants (któryś kurier wyłączony): count by delivery filters, not raw status_id.
+        val (waiting, hint, estimated) = when {
+            active.isEmpty() -> Triple(0, "brak aktywnych kurierów", true)
+            allActive || variantKey?.mask == 7 -> Triple(
+                BaselinkerOrderPoolProvider.countInPoolStatuses(orders, onlyConfirmed),
+                "wariant startowy: count ze status_id puli",
+                false,
+            )
+            else -> Triple(
+                BaselinkerOrderPoolProvider.countMatching(
+                    orders = orders,
+                    mappings = settings.poolFilter.deliveryMappings,
+                    activeCourierIds = active,
+                    onlyConfirmed = onlyConfirmed,
+                ),
+                "wariant filtrów: delivery aktywnych kurierów (szacunek)",
+                true,
+            )
+        }
         return CounterDisplay.Live(
             waiting = waiting,
-            estimated = true,
+            estimated = estimated,
             lastSyncEpochMs = sync.lastSuccessEpochMs,
             error = sync.lastError,
+            filterHint = hint,
         )
     }
 
@@ -244,13 +266,14 @@ class PickPackRepository(
     }
 
     /**
-     * Fetches orders for configured imienny statuses and plays MP3 if any order
-     * has been in that status longer than the threshold (via date_in_status).
-     * Errors → no sound (never treat failure as zero overdue).
+     * Fetches orders for configured imienny statuses (getOrders + status_id):
+     * - updates per-status_id counts (UI counters)
+     * - if alert enabled: plays MP3 when any order exceeds threshold (date_in_status)
+     * Errors → no sound; counts marked unreliable (never fake zeros on failure).
      */
     suspend fun checkNamedStatusAlert(cfg: NamedStatusAlertConfig? = null) {
         val effective = cfg ?: settingsFlow.first().namedStatusAlert
-        if (!effective.enabled || effective.statuses.isEmpty()) {
+        if (effective.statuses.isEmpty()) {
             _namedAlertState.value = NamedAlertState(active = false)
             return
         }
@@ -258,6 +281,7 @@ class PickPackRepository(
             _namedAlertState.value = _namedAlertState.value.copy(
                 lastError = "Brak tokenu",
                 lastCheckEpochMs = System.currentTimeMillis(),
+                countsReliable = false,
             )
             return
         }
@@ -278,15 +302,32 @@ class PickPackRepository(
                     idFrom = page.maxOf { it.orderId }
                 }
             }
-            val nowSec = System.currentTimeMillis() / 1000L
+            val orders = collected.values.toList()
+            val counts = NamedStatusCountLogic.countsByStatusId(
+                orders = orders,
+                statusIds = effective.statuses.map { it.statusId },
+            )
+            val nowMs = System.currentTimeMillis()
+            val prev = _namedAlertState.value
+            if (!effective.enabled) {
+                _namedAlertState.value = NamedAlertState(
+                    active = false,
+                    overdueCount = 0,
+                    lastPlayedEpochMs = prev.lastPlayedEpochMs,
+                    lastCheckEpochMs = nowMs,
+                    lastError = null,
+                    countsByStatusId = counts,
+                    countsReliable = true,
+                )
+                return
+            }
+            val nowSec = nowMs / 1000L
             val overdue = NamedStatusAlertLogic.overdueOrders(
-                orders = collected.values.toList(),
+                orders = orders,
                 namedStatusIds = effective.statuses.map { it.statusId }.toSet(),
                 nowEpochSec = nowSec,
                 thresholdMinutes = effective.thresholdMinutes,
             )
-            val prev = _namedAlertState.value
-            val nowMs = System.currentTimeMillis()
             val play = NamedStatusAlertLogic.shouldPlay(
                 overdueCount = overdue.size,
                 wasActive = prev.active,
@@ -308,11 +349,14 @@ class PickPackRepository(
                 lastPlayedEpochMs = lastPlayed,
                 lastCheckEpochMs = nowMs,
                 lastError = null,
+                countsByStatusId = counts,
+                countsReliable = true,
             )
         } catch (e: Exception) {
             _namedAlertState.value = _namedAlertState.value.copy(
                 lastCheckEpochMs = System.currentTimeMillis(),
                 lastError = e.message ?: "Błąd alertu imiennego",
+                countsReliable = false,
             )
         }
     }

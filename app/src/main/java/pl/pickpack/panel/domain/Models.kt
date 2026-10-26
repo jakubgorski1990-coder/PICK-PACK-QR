@@ -200,14 +200,17 @@ object ImienneGridLayout {
     }
 }
 
-/** Counter display for a group panel. */
+/** Counter display for a group panel (Pick/Pack filter estimate — not raw status_id). */
 sealed class CounterDisplay {
     data object NotConfigured : CounterDisplay()
     data class DemoValue(val waiting: Int, val threshold: Int?) : CounterDisplay()
     data class Live(
         val waiting: Int,
+        /** Always true: BL API cannot recreate full pick/pack template reservation. */
         val estimated: Boolean,
         val lastSyncEpochMs: Long?,
         val error: String? = null,
+        /** Short explanation shown under the number (active couriers / delivery filter). */
+        val filterHint: String? = null,
     ) : CounterDisplay()
 }

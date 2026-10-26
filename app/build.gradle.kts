@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "1.3.1-audio-fix"
+        versionName = "1.4.0-counters"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

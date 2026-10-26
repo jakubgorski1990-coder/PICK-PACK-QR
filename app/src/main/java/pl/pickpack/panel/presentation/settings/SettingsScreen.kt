@@ -469,13 +469,28 @@ fun SettingsScreen(
                 newStatusName = ""
             }) { Text("Dodaj") }
         }
+        Text(
+            "Mały licznik = ile zamówień jest teraz w tym status_id (getOrders).",
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
         alertCfg.statuses.forEach { ref ->
             var name by remember(ref.statusId, ref.displayName) { mutableStateOf(ref.displayName) }
+            val countText = when {
+                !alertUi.countsReliable -> "—"
+                else -> (alertUi.countsByStatusId[ref.statusId] ?: 0).toString()
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
             ) {
-                Text("${ref.statusId}", color = WarehouseAmber, modifier = Modifier.width(80.dp))
+                Text("${ref.statusId}", color = WarehouseAmber, modifier = Modifier.width(72.dp), fontSize = 12.sp)
+                Text(
+                    countText,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.width(28.dp),
+                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

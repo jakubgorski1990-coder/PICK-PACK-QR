@@ -128,6 +128,28 @@ class BaselinkerOrderPoolProvider(
     fun cachedOrders(): List<PoolOrder> = orders.value
 
     companion object {
+        /**
+         * Start / full-set variant: count all cached pool orders (already fetched for
+         * configured status_id list) — no delivery filter.
+         */
+        fun countInPoolStatuses(
+            orders: List<PoolOrder>,
+            onlyConfirmed: Boolean,
+        ): Int {
+            val seen = HashSet<Long>()
+            var count = 0
+            for (order in orders) {
+                if (onlyConfirmed && !order.confirmed) continue
+                if (!seen.add(order.orderId)) continue
+                count++
+            }
+            return count
+        }
+
+        /**
+         * Partial courier variants: intersect pool cache with delivery methods of
+         * currently active couriers (client-side — getOrders has no delivery input filter).
+         */
         fun countMatching(
             orders: List<PoolOrder>,
             mappings: List<DeliveryMapping>,
