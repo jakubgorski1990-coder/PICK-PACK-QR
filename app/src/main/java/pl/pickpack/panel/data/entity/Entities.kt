@@ -56,3 +56,33 @@ data class GroupMetaEntity(
     val visible: Boolean,
     val orderIndex: Int,
 )
+
+@Entity(tableName = "named_qr")
+data class NamedQrEntity(
+    @PrimaryKey val id: String,
+    val displayName: String,
+    val templateId: Int?,
+    val payloadOverride: String?,
+    val orderIndex: Int,
+    val isDemo: Boolean,
+) {
+    fun toDomain() = pl.pickpack.panel.domain.NamedQrEntry(
+        id = id,
+        displayName = displayName,
+        templateId = templateId,
+        payloadOverride = payloadOverride,
+        orderIndex = orderIndex,
+        isDemo = isDemo,
+    )
+
+    companion object {
+        fun fromDomain(e: pl.pickpack.panel.domain.NamedQrEntry) = NamedQrEntity(
+            id = e.id,
+            displayName = e.displayName,
+            templateId = e.templateId,
+            payloadOverride = e.payloadOverride,
+            orderIndex = e.orderIndex,
+            isDemo = e.isDemo,
+        )
+    }
+}

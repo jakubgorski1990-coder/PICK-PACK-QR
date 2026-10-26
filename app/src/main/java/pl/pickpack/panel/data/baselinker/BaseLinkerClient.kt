@@ -67,6 +67,7 @@ class BaseLinkerClient(
                         },
                         deliveryMethodName = o.optString("delivery_method").ifBlank { null },
                         confirmed = o.optBoolean("confirmed", true),
+                        dateInStatusEpochSec = resolveEnteredStatusEpoch(o),
                     )
                 )
             }
@@ -111,5 +112,19 @@ class BaseLinkerClient(
 
     companion object {
         const val ENDPOINT = "https://api.baselinker.com/connector.php"
+
+        /**
+         * Prefer `date_in_status` (time in current status). Else `date_confirmed`, else `date_add`.
+         */
+        fun resolveEnteredStatusEpoch(o: JSONObject): Long? {
+            fun optUnix(key: String): Long? {
+                if (!o.has(key) || o.isNull(key)) return null
+                val v = o.optLong(key, 0L)
+                return v.takeIf { it > 0L }
+            }
+            return optUnix("date_in_status")
+                ?: optUnix("date_confirmed")
+                ?: optUnix("date_add")
+        }
     }
 }

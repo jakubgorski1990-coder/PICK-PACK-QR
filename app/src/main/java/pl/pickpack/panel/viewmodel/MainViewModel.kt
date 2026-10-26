@@ -12,10 +12,17 @@ import pl.pickpack.panel.PickPackApplication
 import pl.pickpack.panel.data.repository.PickPackRepository
 import pl.pickpack.panel.domain.AppSettings
 import pl.pickpack.panel.domain.BlStatus
+import pl.pickpack.panel.domain.BlpptPayload
 import pl.pickpack.panel.domain.GroupConfig
+import pl.pickpack.panel.domain.CourierDeadline
+import pl.pickpack.panel.domain.CourierDeadlineConfig
+import pl.pickpack.panel.domain.NamedQrEntry
+import pl.pickpack.panel.domain.NamedStatusAlertConfig
+import pl.pickpack.panel.domain.NamedStatusRef
 import pl.pickpack.panel.domain.PoolFilterConfig
 import pl.pickpack.panel.domain.QrVariantConfig
 import pl.pickpack.panel.domain.QrVariantKey
+import java.util.UUID
 
 data class UiMessage(val text: String, val id: Long = System.currentTimeMillis())
 
@@ -234,5 +241,112 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
+    }
+
+    fun addNamedPerson(displayName: String, templateIdRaw: String) {
+        viewModelScope.launch {
+            if (displayName.isBlank()) {
+                _message.value = UiMessage("Podaj nazwę")
+                return@launch
+            }
+            if (BlpptPayload.parseFlexibleTemplateId(templateIdRaw) == null &&
+                templateIdRaw.isNotBlank()
+            ) {
+                _message.value = UiMessage("Nieprawidłowy template ID")
+                return@launch
+            }
+            repo.addNamedEntry(displayName, templateIdRaw)
+            _message.value = UiMessage("Dodano: $displayName")
+        }
+    }
+
+    fun updateNamedPerson(entry: NamedQrEntry) {
+        viewModelScope.launch {
+            repo.upsertNamedEntry(entry.copy(isDemo = false))
+            _message.value = UiMessage("Zapisano ${entry.displayName}")
+        }
+    }
+
+    fun deleteNamedPerson(id: String) {
+        viewModelScope.launch {
+            repo.deleteNamedEntry(id)
+            _message.value = UiMessage("Usunięto wpis imienny")
+        }
+    }
+
+    fun moveNamedPerson(id: String, delta: Int) {
+        viewModelScope.launch { repo.moveNamedEntry(id, delta) }
+    }
+
+    fun newNamedDraft(name: String, templateId: Int?, order: Int) = NamedQrEntry(
+        id = UUID.randomUUID().toString(),
+        displayName = name,
+        templateId = templateId,
+        orderIndex = order,
+    )
+
+    fun updateNamedStatusAlert(transform: (NamedStatusAlertConfig) -> NamedStatusAlertConfig) {
+        viewModelScope.launch { repo.updateNamedStatusAlert(transform) }
+    }
+
+    fun upsertNamedStatus(statusId: Int, displayName: String) {
+        viewModelScope.launch {
+            if (statusId <= 0 || displayName.isBlank()) {
+                _message.value = UiMessage("Podaj statusId i nazwę")
+                return@launch
+            }
+            repo.upsertNamedStatus(NamedStatusRef(statusId, displayName.trim()))
+            _message.value = UiMessage("Zapisano status imienny $displayName")
+        }
+    }
+
+    fun deleteNamedStatus(statusId: Int) {
+        viewModelScope.launch {
+            repo.deleteNamedStatus(statusId)
+            _message.value = UiMessage("Usunięto status $statusId")
+        }
+    }
+
+    fun testNamedAlertSound() {
+        val ok = repo.playNamedAlertTest()
+        _message.value = UiMessage(if (ok) "Odtwarzanie alertu…" else "Nie udało się odtworzyć (zajęte?)")
+    }
+
+    fun checkNamedAlertNow() {
+        viewModelScope.launch {
+            repo.checkNamedStatusAlert()
+            val st = repo.namedAlertState.value
+            _message.value = UiMessage(
+                when {
+                    st.lastError != null -> "Alert: ${st.lastError}"
+                    st.active -> "Alert aktywny — przeterminowane: ${st.overdueCount}"
+                    else -> "Alert: brak przeterminowanych w statusach imiennych"
+                }
+            )
+        }
+    }
+
+    fun updateCourierDeadlines(transform: (CourierDeadlineConfig) -> CourierDeadlineConfig) {
+        viewModelScope.launch { repo.updateCourierDeadlines(transform) }
+    }
+
+    fun setCourierDeadline(courierId: String, hour: Int?, minute: Int?) {
+        viewModelScope.launch {
+            repo.updateCourierDeadlines { cfg ->
+                val next = cfg.deadlines.map {
+                    if (it.courierId == courierId) CourierDeadline(courierId, hour, minute) else it
+                }
+                cfg.copy(deadlines = next)
+            }
+            _message.value = UiMessage(
+                if (hour == null) "Wyczyszczono godzinę $courierId"
+                else "Godzina graniczna $courierId: %02d:%02d".format(hour, minute ?: 0)
+            )
+        }
+    }
+
+    fun testKurierSound(courierId: String) {
+        val ok = repo.testKurierSound(courierId)
+        _message.value = UiMessage(if (ok) "Kolejka: audio $courierId" else "Brak pliku audio")
     }
 }

@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 import pl.pickpack.panel.data.entity.GroupMetaEntity
+import pl.pickpack.panel.data.entity.NamedQrEntity
 import pl.pickpack.panel.data.entity.QrVariantEntity
 
 @Dao
@@ -51,4 +52,28 @@ interface GroupMetaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<GroupMetaEntity>)
+}
+
+@Dao
+interface NamedQrDao {
+    @Query("SELECT * FROM named_qr WHERE isDemo = 0 ORDER BY orderIndex ASC")
+    fun observeProduction(): Flow<List<NamedQrEntity>>
+
+    @Query("SELECT * FROM named_qr WHERE isDemo = 0 ORDER BY orderIndex ASC")
+    suspend fun getProduction(): List<NamedQrEntity>
+
+    @Query("SELECT * FROM named_qr ORDER BY orderIndex ASC")
+    suspend fun getAll(): List<NamedQrEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: NamedQrEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<NamedQrEntity>)
+
+    @Query("DELETE FROM named_qr WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM named_qr WHERE isDemo = 1")
+    suspend fun deleteDemo()
 }

@@ -10,8 +10,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -23,9 +25,11 @@ import pl.pickpack.panel.data.AppDatabase
 import pl.pickpack.panel.data.ConfigExportImport
 import pl.pickpack.panel.data.DemoContent
 import pl.pickpack.panel.data.QrBitmapEncoder
+import pl.pickpack.panel.data.alert.AlertSoundPlayer
 import pl.pickpack.panel.data.baselinker.BaseLinkerClient
 import pl.pickpack.panel.data.datastore.SettingsDataStore
 import pl.pickpack.panel.data.entity.GroupMetaEntity
+import pl.pickpack.panel.data.entity.NamedQrEntity
 import pl.pickpack.panel.data.entity.QrVariantEntity
 import pl.pickpack.panel.data.provider.BaselinkerOrderPoolProvider
 import pl.pickpack.panel.data.provider.DemoOrderPoolProvider
@@ -39,7 +43,15 @@ import pl.pickpack.panel.domain.CounterDisplay
 import pl.pickpack.panel.domain.CourierState
 import pl.pickpack.panel.domain.GroupConfig
 import pl.pickpack.panel.domain.GroupId
+import pl.pickpack.panel.domain.NamedAlertState
+import pl.pickpack.panel.domain.NamedQrEntry
+import pl.pickpack.panel.domain.CourierDeadlineConfig
+import pl.pickpack.panel.domain.CourierDeadlineLogic
+import pl.pickpack.panel.domain.NamedStatusAlertConfig
+import pl.pickpack.panel.domain.NamedStatusAlertLogic
+import pl.pickpack.panel.domain.NamedStatusRef
 import pl.pickpack.panel.domain.PoolFilterConfig
+import pl.pickpack.panel.domain.PoolOrder
 import pl.pickpack.panel.domain.QrDisplayState
 import pl.pickpack.panel.domain.QrSelectionLogic
 import pl.pickpack.panel.domain.QrVariantConfig
@@ -49,6 +61,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.util.UUID
 
 class PickPackRepository(
     private val context: Context,
@@ -68,6 +82,9 @@ class PickPackRepository(
         configProvider = { latestPoolFilter },
         tokenPresent = { tokenStore.hasToken() },
     )
+    private val alertPlayer = AlertSoundPlayer(context)
+    private val _namedAlertState = MutableStateFlow(NamedAlertState())
+    val namedAlertState: StateFlow<NamedAlertState> = _namedAlertState.asStateFlow()
 
     val settingsFlow: Flow<AppSettings> = settingsStore.settingsFlow.map { s ->
         s.copy(
@@ -108,7 +125,12 @@ class PickPackRepository(
         val counters: Map<GroupId, CounterDisplay>,
         val connectionLabel: String,
         val syncState: SyncState,
+        val namedEntries: List<NamedQrEntry> = emptyList(),
+        val namedAlert: NamedAlertState = NamedAlertState(),
     )
+
+    private val namedProductionFlow: Flow<List<NamedQrEntry>> =
+        db.namedQrDao().observeProduction().map { list -> list.map { it.toDomain() } }
 
     private val panelSource = combine(
         settingsFlow,
@@ -154,16 +176,25 @@ class PickPackRepository(
     }
 
     val panelFlow: StateFlow<PanelSnapshot?> =
-        panelSource.stateIn(scope, SharingStarted.Eagerly, null)
+        combine(panelSource, namedProductionFlow, namedAlertState) { snap, named, alert ->
+            val displayNamed = when {
+                // DEMO only when mode on and no production named entries — never silent substitute.
+                snap.settings.demoMode && named.isEmpty() -> DemoContent.namedEntries()
+                else -> named
+            }
+            snap.copy(namedEntries = displayNamed, namedAlert = alert)
+        }.stateIn(scope, SharingStarted.Eagerly, null)
 
     init {
         scope.launch {
             settingsStore.poolFilterFlow.collect { latestPoolFilter = it }
         }
         scope.launch {
+            settingsStore.seedNamedStatusesIfNeeded()
             seedTemplateIdsIfNeeded()
             maybeDailyReset()
-            runSyncLoop()
+            launch { runSyncLoop() }
+            launch { runCourierDeadlineLoop() }
         }
     }
 
@@ -202,13 +233,106 @@ class PickPackRepository(
         while (scope.isActive) {
             val settings = settingsFlow.first()
             val intervalMs = settings.poolFilter.syncIntervalSec.coerceIn(15, 600) * 1000L
-            if (!settings.demoMode &&
-                settings.baselinkerTokenPresent &&
-                settings.poolFilter.isCounterRulesReady()
-            ) {
-                blPool.syncNow(force = false)
+            if (!settings.demoMode && settings.baselinkerTokenPresent) {
+                if (settings.poolFilter.isCounterRulesReady()) {
+                    blPool.syncNow(force = false)
+                }
+                checkNamedStatusAlert(settings.namedStatusAlert)
             }
             delay(intervalMs)
+        }
+    }
+
+    /**
+     * Fetches orders for configured imienny statuses and plays MP3 if any order
+     * has been in that status longer than the threshold (via date_in_status).
+     * Errors → no sound (never treat failure as zero overdue).
+     */
+    suspend fun checkNamedStatusAlert(cfg: NamedStatusAlertConfig? = null) {
+        val effective = cfg ?: settingsFlow.first().namedStatusAlert
+        if (!effective.enabled || effective.statuses.isEmpty()) {
+            _namedAlertState.value = NamedAlertState(active = false)
+            return
+        }
+        if (!tokenStore.hasToken()) {
+            _namedAlertState.value = _namedAlertState.value.copy(
+                lastError = "Brak tokenu",
+                lastCheckEpochMs = System.currentTimeMillis(),
+            )
+            return
+        }
+        try {
+            val collected = linkedMapOf<Long, PoolOrder>()
+            for (ref in effective.statuses) {
+                var idFrom: Long? = null
+                var guard = 0
+                while (guard++ < 30) {
+                    val page = blClient.getOrders(
+                        statusId = ref.statusId,
+                        idFrom = idFrom,
+                        getUnconfirmed = false,
+                    )
+                    if (page.isEmpty()) break
+                    page.forEach { collected[it.orderId] = it }
+                    if (page.size < 100) break
+                    idFrom = page.maxOf { it.orderId }
+                }
+            }
+            val nowSec = System.currentTimeMillis() / 1000L
+            val overdue = NamedStatusAlertLogic.overdueOrders(
+                orders = collected.values.toList(),
+                namedStatusIds = effective.statuses.map { it.statusId }.toSet(),
+                nowEpochSec = nowSec,
+                thresholdMinutes = effective.thresholdMinutes,
+            )
+            val prev = _namedAlertState.value
+            val nowMs = System.currentTimeMillis()
+            val play = NamedStatusAlertLogic.shouldPlay(
+                overdueCount = overdue.size,
+                wasActive = prev.active,
+                lastPlayedEpochMs = prev.lastPlayedEpochMs,
+                nowEpochMs = nowMs,
+                cooldownMinutes = effective.cooldownMinutes,
+            )
+            var lastPlayed = prev.lastPlayedEpochMs
+            if (play) {
+                withContext(Dispatchers.Main) {
+                    if (alertPlayer.playUwagaImienny()) {
+                        lastPlayed = nowMs
+                    }
+                }
+            }
+            _namedAlertState.value = NamedAlertState(
+                active = overdue.isNotEmpty(),
+                overdueCount = overdue.size,
+                lastPlayedEpochMs = lastPlayed,
+                lastCheckEpochMs = nowMs,
+                lastError = null,
+            )
+        } catch (e: Exception) {
+            _namedAlertState.value = _namedAlertState.value.copy(
+                lastCheckEpochMs = System.currentTimeMillis(),
+                lastError = e.message ?: "Błąd alertu imiennego",
+            )
+        }
+    }
+
+    fun playNamedAlertTest(): Boolean = alertPlayer.playUwagaImienny()
+
+    suspend fun updateNamedStatusAlert(transform: (NamedStatusAlertConfig) -> NamedStatusAlertConfig) {
+        settingsStore.updateNamedStatusAlert(transform)
+    }
+
+    suspend fun upsertNamedStatus(ref: NamedStatusRef) {
+        settingsStore.updateNamedStatusAlert { cfg ->
+            val others = cfg.statuses.filterNot { it.statusId == ref.statusId }
+            cfg.copy(statuses = others + ref)
+        }
+    }
+
+    suspend fun deleteNamedStatus(statusId: Int) {
+        settingsStore.updateNamedStatusAlert { cfg ->
+            cfg.copy(statuses = cfg.statuses.filterNot { it.statusId == statusId })
         }
     }
 
@@ -238,10 +362,15 @@ class PickPackRepository(
 
     suspend fun toggleCourier(courierId: String) {
         val current = courierStatesFlow.currentOrDefault()
+        val target = current.find { it.id == courierId } ?: return
+        val nowActive = !target.isActive
         settingsStore.saveUndoSnapshot(current)
         settingsStore.setCourierStates(
-            current.map { if (it.id == courierId) it.copy(isActive = !it.isActive) else it }
+            current.map { if (it.id == courierId) it.copy(isActive = nowActive) else it }
         )
+        if (settingsFlow.first().courierToggleSoundEnabled) {
+            alertPlayer.enqueueCourierToggle(nowActive)
+        }
     }
 
     suspend fun undoLastCourierChange(): Boolean {
@@ -254,6 +383,45 @@ class PickPackRepository(
         val current = courierStatesFlow.currentOrDefault()
         settingsStore.saveUndoSnapshot(current)
         settingsStore.setCourierStates(current.map { it.copy(isActive = true) })
+        settingsStore.clearCourierDeadlinePlayed()
+    }
+
+    suspend fun updateCourierDeadlines(transform: (CourierDeadlineConfig) -> CourierDeadlineConfig) {
+        settingsStore.updateCourierDeadlines(transform)
+    }
+
+    fun testKurierSound(courierId: String): Boolean =
+        alertPlayer.enqueueKurier(courierId)
+
+    /**
+     * Foreground tick (~1 min): play courier MP3 at deadline−30 and deadline−25 (Warsaw).
+     */
+    private suspend fun runCourierDeadlineLoop() {
+        while (scope.isActive) {
+            try {
+                tickCourierDeadlines()
+            } catch (_: Exception) {
+            }
+            delay(30_000L) // half-minute so we don't miss the clock minute
+        }
+    }
+
+    suspend fun tickCourierDeadlines() {
+        val settings = settingsFlow.first()
+        val cfg = settings.courierDeadlines
+        if (!cfg.enabled) return
+        val now = ZonedDateTime.now(CourierDeadlineLogic.WARSAW)
+        val played = settingsStore.courierDeadlinePlayedFlow.first()
+        val due = CourierDeadlineLogic.dueEvents(now, cfg, played)
+        if (due.isEmpty()) return
+        val day = now.toLocalDate()
+        val keys = mutableListOf<String>()
+        for ((courierId, slot) in due) {
+            if (alertPlayer.enqueueKurier(courierId)) {
+                keys += CourierDeadlineLogic.playKey(day, courierId, slot)
+            }
+        }
+        settingsStore.markCourierDeadlinePlayed(keys)
     }
 
     suspend fun renameCourier(courierId: String, name: String) {
@@ -325,14 +493,53 @@ class PickPackRepository(
         val groups = db.groupMetaDao().getAll().associate {
             (GroupId.fromStorageKey(it.groupKey) ?: GroupId.PICK_PACK_1) to it.displayName
         }
-        // Secrets never included — ConfigExportImport already skips tokens.
-        return ConfigExportImport.exportJson(variants, groups)
+        val named = db.namedQrDao().getProduction().map { it.toDomain() }
+        return ConfigExportImport.exportJson(variants, groups, named)
     }
 
     suspend fun importConfig(json: String): Int {
-        val imported = ConfigExportImport.importJson(json)
-        imported.forEach { qrProvider.upsertVariant(it) }
-        return imported.size
+        val bundle = ConfigExportImport.importJson(json)
+        bundle.variants.forEach { qrProvider.upsertVariant(it) }
+        bundle.namedEntries.forEach { upsertNamedEntry(it) }
+        return bundle.variants.size + bundle.namedEntries.size
+    }
+
+    suspend fun upsertNamedEntry(entry: NamedQrEntry) {
+        val clean = entry.copy(isDemo = false)
+        db.namedQrDao().upsert(NamedQrEntity.fromDomain(clean))
+    }
+
+    suspend fun deleteNamedEntry(id: String) {
+        db.namedQrDao().delete(id)
+    }
+
+    suspend fun addNamedEntry(displayName: String, templateIdRaw: String, payloadOverride: String? = null) {
+        val templateId = BlpptPayload.parseFlexibleTemplateId(templateIdRaw)
+        val existing = db.namedQrDao().getProduction()
+        val nextOrder = (existing.maxOfOrNull { it.orderIndex } ?: -1) + 1
+        upsertNamedEntry(
+            NamedQrEntry(
+                id = UUID.randomUUID().toString(),
+                displayName = displayName.trim(),
+                templateId = templateId,
+                payloadOverride = payloadOverride?.trim()?.takeIf { it.isNotEmpty() },
+                orderIndex = nextOrder,
+                isDemo = false,
+            )
+        )
+    }
+
+    suspend fun moveNamedEntry(id: String, delta: Int) {
+        val list = db.namedQrDao().getProduction().map { it.toDomain() }.toMutableList()
+        val idx = list.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        val target = (idx + delta).coerceIn(0, list.lastIndex)
+        if (target == idx) return
+        val item = list.removeAt(idx)
+        list.add(target, item)
+        list.forEachIndexed { i, e ->
+            db.namedQrDao().upsert(NamedQrEntity.fromDomain(e.copy(orderIndex = i)))
+        }
     }
 
     suspend fun importImageAsVariant(

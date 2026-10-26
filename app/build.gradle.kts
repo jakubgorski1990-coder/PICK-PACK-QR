@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "1.1.0-etap2"
+        versionName = "1.3.0-imienne-alert"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
