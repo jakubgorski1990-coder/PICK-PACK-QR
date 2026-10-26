@@ -45,6 +45,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenImport: () -> Unit,
     onOpenCompleteness: () -> Unit,
+    onOpenBaselinker: () -> Unit,
 ) {
     val panel by viewModel.panel.collectAsStateWithLifecycle()
     val pinUnlocked by viewModel.pinUnlocked.collectAsStateWithLifecycle()
@@ -227,16 +228,26 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        SectionTitle("Szablony BL (Etap 1 — tylko wskazówki ID)")
-        Text("Pick/Pack 1 wszyscy aktywni: ${GroupId.PICK_PACK_1.defaultTemplateId}", color = Color.White)
-        Text("Pick/Pack 2 wszyscy aktywni: ${GroupId.PICK_PACK_2.defaultTemplateId}", color = Color.White)
-        Text("OrderPoolProvider: stub / DEMO — bez endpointów API", color = Color.Gray, fontSize = 13.sp)
+        SectionTitle("BaseLinker")
+        Text(
+            "QR = BLPPT_ + ID (6 cyfr). Prefill pełnych zestawów: " +
+                "${GroupId.PICK_PACK_1.defaultTemplateId} / ${GroupId.PICK_PACK_2.defaultTemplateId}",
+            color = Color.White,
+            fontSize = 13.sp,
+        )
+        Text(
+            if (snapshot.settings.baselinkerTokenPresent) "Token: zapisany (Keystore)"
+            else "Token: brak",
+            color = Color.LightGray,
+            fontSize = 13.sp,
+        )
+        Button(onClick = onOpenBaselinker) { Text("Konfiguracja API / filtrów / sync") }
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { showNewDayConfirm = true }) { Text("Nowy dzień — wszyscy aktywni") }
             Button(onClick = onOpenImport) { Text("Import QR") }
-            Button(onClick = onOpenCompleteness) { Text("Kompletność 14") }
+            Button(onClick = onOpenCompleteness) { Text("Kompletność 14 + template ID") }
         }
     }
 

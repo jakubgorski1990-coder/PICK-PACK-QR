@@ -90,7 +90,7 @@ class QrSelectionLogicTest {
     }
 
     @Test
-    fun corruptVariant_emptyPayloadAndNoImage() {
+    fun blankPayloadWithoutTemplateId_isNotConfigured() {
         val variants = mapOf(
             1 to variant(GroupId.PICK_PACK_1, 1, payload = "  ", fallback = null),
         )
@@ -100,7 +100,7 @@ class QrSelectionLogicTest {
             variants,
             demoMode = false,
         ) as QrDisplayState.Missing
-        assertThat(state.reason).isEqualTo(MissingReason.CORRUPT)
+        assertThat(state.reason).isEqualTo(MissingReason.NOT_CONFIGURED)
     }
 
     @Test
@@ -144,5 +144,43 @@ class QrSelectionLogicTest {
     fun startTemplateIds() {
         assertThat(GroupId.PICK_PACK_1.defaultTemplateId).isEqualTo(18472)
         assertThat(GroupId.PICK_PACK_2.defaultTemplateId).isEqualTo(18173)
+    }
+
+    @Test
+    fun templateIdOnly_generatesBlpptPayload() {
+        val variants = mapOf(
+            7 to QrVariantConfig(
+                groupId = GroupId.PICK_PACK_1,
+                mask = 7,
+                payload = null,
+                enabled = true,
+                isDemo = false,
+                fallbackImagePath = null,
+                sourceLabel = "auto",
+                templateIdHint = 18472,
+            )
+        )
+        val state = QrSelectionLogic.select(
+            GroupId.PICK_PACK_1,
+            setOf("orlen", "dhl", "olza"),
+            variants,
+            demoMode = false,
+        ) as QrDisplayState.Ready
+        assertThat(state.payload).isEqualTo("BLPPT_018472")
+        assertThat(state.isDemo).isFalse()
+    }
+
+    @Test
+    fun missingTemplateId_notConfigured_neverDemoSubstitute() {
+        val state = QrSelectionLogic.select(
+            GroupId.PICK_PACK_1,
+            setOf("orlen"),
+            emptyMap(),
+            demoMode = false,
+            demoVariants = mapOf(
+                1 to variant(GroupId.PICK_PACK_1, 1, "DEMO").copy(isDemo = true),
+            ),
+        )
+        assertThat(state).isInstanceOf(QrDisplayState.Missing::class.java)
     }
 }

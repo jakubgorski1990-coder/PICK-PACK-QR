@@ -129,7 +129,7 @@ data class GroupConfig(
 )
 
 /**
- * Settings persisted for Etap 1 (+ stubs for Etap 2–3).
+ * Settings persisted for Etap 1–2 (+ stubs for Etap 3).
  */
 data class AppSettings(
     val visibleCodeCount: Int = 2,
@@ -143,15 +143,21 @@ data class AppSettings(
     val dailyResetHour: Int = 5,
     val dailyResetMinute: Int = 0,
     val timezoneId: String = "Europe/Warsaw",
-    // Etap 2–3 stubs
     val baselinkerTokenPresent: Boolean = false,
     val counterConfigured: Boolean = false,
     val alertThresholdEnabled: Boolean = false,
     val ttsEnabled: Boolean = false,
+    val poolFilter: PoolFilterConfig = PoolFilterConfig(),
 )
 
-/** Counter display for a group panel (Etap 1: stub / demo simulator). */
+/** Counter display for a group panel. */
 sealed class CounterDisplay {
     data object NotConfigured : CounterDisplay()
     data class DemoValue(val waiting: Int, val threshold: Int?) : CounterDisplay()
+    data class Live(
+        val waiting: Int,
+        val estimated: Boolean,
+        val lastSyncEpochMs: Long?,
+        val error: String? = null,
+    ) : CounterDisplay()
 }

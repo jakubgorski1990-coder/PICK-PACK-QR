@@ -15,7 +15,9 @@ import org.json.JSONObject
 import pl.pickpack.panel.domain.AppSettings
 import pl.pickpack.panel.domain.CourierState
 import pl.pickpack.panel.domain.DefaultCouriers
+import pl.pickpack.panel.domain.DeliveryMapping
 import pl.pickpack.panel.domain.GroupId
+import pl.pickpack.panel.domain.PoolFilterConfig
 import java.security.MessageDigest
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "pick_pack_settings")
@@ -38,45 +40,24 @@ class SettingsDataStore(private val context: Context) {
         val undoSnapshot = stringPreferencesKey("undo_snapshot")
         val alertThreshold = booleanPreferencesKey("alert_threshold")
         val ttsEnabled = booleanPreferencesKey("tts_enabled")
+        val poolFilterJson = stringPreferencesKey("pool_filter_json")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
-        AppSettings(
-            visibleCodeCount = prefs[Keys.visibleCodeCount] ?: 2,
-            groupOrder = parseGroupOrder(prefs[Keys.groupOrder]),
-            keepScreenOn = prefs[Keys.keepScreenOn] ?: true,
-            pinEnabled = prefs[Keys.pinEnabled] ?: false,
-            pinHash = prefs[Keys.pinHash],
-            demoMode = prefs[Keys.demoMode] ?: false,
-            dailyResetEnabled = prefs[Keys.dailyResetEnabled] ?: false,
-            dailyResetHour = prefs[Keys.dailyResetHour] ?: 5,
-            dailyResetMinute = prefs[Keys.dailyResetMinute] ?: 0,
-            timezoneId = prefs[Keys.timezoneId] ?: "Europe/Warsaw",
-            alertThresholdEnabled = prefs[Keys.alertThreshold] ?: false,
-            ttsEnabled = prefs[Keys.ttsEnabled] ?: false,
-        )
+        prefs.toAppSettings()
     }
 
     val courierStatesFlow: Flow<List<CourierState>> = context.dataStore.data.map { prefs ->
         parseCourierStates(prefs[Keys.courierStates])
     }
 
+    val poolFilterFlow: Flow<PoolFilterConfig> = context.dataStore.data.map { prefs ->
+        parsePoolFilter(prefs[Keys.poolFilterJson])
+    }
+
     suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
         context.dataStore.edit { prefs ->
-            val current = AppSettings(
-                visibleCodeCount = prefs[Keys.visibleCodeCount] ?: 2,
-                groupOrder = parseGroupOrder(prefs[Keys.groupOrder]),
-                keepScreenOn = prefs[Keys.keepScreenOn] ?: true,
-                pinEnabled = prefs[Keys.pinEnabled] ?: false,
-                pinHash = prefs[Keys.pinHash],
-                demoMode = prefs[Keys.demoMode] ?: false,
-                dailyResetEnabled = prefs[Keys.dailyResetEnabled] ?: false,
-                dailyResetHour = prefs[Keys.dailyResetHour] ?: 5,
-                dailyResetMinute = prefs[Keys.dailyResetMinute] ?: 0,
-                timezoneId = prefs[Keys.timezoneId] ?: "Europe/Warsaw",
-                alertThresholdEnabled = prefs[Keys.alertThreshold] ?: false,
-                ttsEnabled = prefs[Keys.ttsEnabled] ?: false,
-            )
+            val current = prefs.toAppSettings()
             val next = transform(current)
             prefs[Keys.visibleCodeCount] = next.visibleCodeCount.coerceIn(1, 2)
             prefs[Keys.groupOrder] = next.groupOrder.joinToString(",") { it.storageKey }
@@ -90,6 +71,14 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.timezoneId] = next.timezoneId
             prefs[Keys.alertThreshold] = next.alertThresholdEnabled
             prefs[Keys.ttsEnabled] = next.ttsEnabled
+            prefs[Keys.poolFilterJson] = encodePoolFilter(next.poolFilter)
+        }
+    }
+
+    suspend fun updatePoolFilter(transform: (PoolFilterConfig) -> PoolFilterConfig) {
+        context.dataStore.edit { prefs ->
+            val current = parsePoolFilter(prefs[Keys.poolFilterJson])
+            prefs[Keys.poolFilterJson] = encodePoolFilter(transform(current))
         }
     }
 
@@ -169,6 +158,26 @@ class SettingsDataStore(private val context: Context) {
                 )
             }
 
+        private fun Preferences.toAppSettings(): AppSettings {
+            val pool = parsePoolFilter(this[Keys.poolFilterJson])
+            return AppSettings(
+                visibleCodeCount = this[Keys.visibleCodeCount] ?: 2,
+                groupOrder = parseGroupOrder(this[Keys.groupOrder]),
+                keepScreenOn = this[Keys.keepScreenOn] ?: true,
+                pinEnabled = this[Keys.pinEnabled] ?: false,
+                pinHash = this[Keys.pinHash],
+                demoMode = this[Keys.demoMode] ?: false,
+                dailyResetEnabled = this[Keys.dailyResetEnabled] ?: false,
+                dailyResetHour = this[Keys.dailyResetHour] ?: 5,
+                dailyResetMinute = this[Keys.dailyResetMinute] ?: 0,
+                timezoneId = this[Keys.timezoneId] ?: "Europe/Warsaw",
+                alertThresholdEnabled = this[Keys.alertThreshold] ?: false,
+                ttsEnabled = this[Keys.ttsEnabled] ?: false,
+                poolFilter = pool,
+                counterConfigured = pool.isCounterRulesReady(),
+            )
+        }
+
         private fun parseGroupOrder(raw: String?): List<GroupId> {
             if (raw.isNullOrBlank()) return listOf(GroupId.PICK_PACK_1, GroupId.PICK_PACK_2)
             val parsed = raw.split(",")
@@ -210,6 +219,60 @@ class SettingsDataStore(private val context: Context) {
                 }.ifEmpty { defaultCourierStates() }
             } catch (_: Exception) {
                 defaultCourierStates()
+            }
+        }
+
+        fun encodePoolFilter(cfg: PoolFilterConfig): String {
+            val root = JSONObject()
+            root.put("syncIntervalSec", cfg.syncIntervalSec)
+            root.put("onlyConfirmed", cfg.onlyConfirmed)
+            root.put("estimatedAlertsEnabled", cfg.estimatedAlertsEnabled)
+            root.put("statusIds", JSONArray(cfg.statusIds))
+            val maps = JSONArray()
+            cfg.deliveryMappings.forEach { m ->
+                maps.put(
+                    JSONObject()
+                        .put("courierId", m.courierId)
+                        .put("deliveryMethodId", m.deliveryMethodId)
+                        .put("nameContains", m.nameContains)
+                )
+            }
+            root.put("deliveryMappings", maps)
+            return root.toString()
+        }
+
+        fun parsePoolFilter(raw: String?): PoolFilterConfig {
+            if (raw.isNullOrBlank()) return PoolFilterConfig()
+            return try {
+                val o = JSONObject(raw)
+                val statuses = o.optJSONArray("statusIds") ?: JSONArray()
+                val statusIds = buildList {
+                    for (i in 0 until statuses.length()) add(statuses.getInt(i))
+                }
+                val mapsArr = o.optJSONArray("deliveryMappings") ?: JSONArray()
+                val maps = buildList {
+                    for (i in 0 until mapsArr.length()) {
+                        val m = mapsArr.getJSONObject(i)
+                        add(
+                            DeliveryMapping(
+                                courierId = m.optString("courierId"),
+                                deliveryMethodId = if (m.has("deliveryMethodId") && !m.isNull("deliveryMethodId")) {
+                                    m.getInt("deliveryMethodId")
+                                } else null,
+                                nameContains = m.optString("nameContains").ifBlank { null },
+                            )
+                        )
+                    }
+                }
+                PoolFilterConfig(
+                    syncIntervalSec = o.optInt("syncIntervalSec", 60).coerceIn(15, 600),
+                    onlyConfirmed = o.optBoolean("onlyConfirmed", true),
+                    estimatedAlertsEnabled = o.optBoolean("estimatedAlertsEnabled", false),
+                    statusIds = statusIds,
+                    deliveryMappings = maps,
+                )
+            } catch (_: Exception) {
+                PoolFilterConfig()
             }
         }
     }
