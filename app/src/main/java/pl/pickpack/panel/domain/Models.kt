@@ -150,6 +150,8 @@ data class AppSettings(
     val poolFilter: PoolFilterConfig = PoolFilterConfig(),
     /** Idle seconds on IMIENNE before auto-return to Pick/Pack (default 15). */
     val imienneTimeoutSec: Int = 15,
+    val namedStatusAlert: NamedStatusAlertConfig = NamedStatusAlertConfig(),
+    val courierDeadlines: CourierDeadlineConfig = CourierDeadlineConfig(),
 )
 
 /**

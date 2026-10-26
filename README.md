@@ -44,6 +44,22 @@ Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same stat
 - Po **15 s** bezczynności na IMIENNE (konfigurowalne) auto-powrót do Pick/Pack. Interakcja resetuje timer.
 - Persist Room; eksport/import JSON uwzględnia listę imiennych (bez tokenu). DEMO nie podstawia braków produkcyjnych.
 
+## Alert głosowy — statusy imienne
+
+- Plik lokalny: `res/raw/uwaga_imienny_status.mp3` („UWAGA w imiennym statusie pozostały zamówienia”).
+- Ustawienia → **Alert głosowy — statusy imienne**: lista `statusId` + imię (seed 10 statusów BL), próg minut (default **30**), cooldown (default **10**), włącz/wyłącz, test dźwięku.
+- Co sync (ten sam token / `getOrders`): jeśli **jakiekolwiek** zamówienie w którymś statusie imiennym ma wiek w statusie **> próg**, odtwarzany jest MP3 (bez nakładania).
+- **Pole daty:** `date_in_status` (czas wejścia do bieżącego statusu). Fallback: `date_confirmed` → `date_add`. Brak daty → zamówienie nie liczy się do alertu.
+- Błąd API / brak tokena → **bez** dźwięku (błąd ≠ zero zamówień).
+- Wskaźnik na pasku: „⚠ Imienny (N)” gdy warunek aktywny.
+
+## Godzina graniczna kuriera
+
+- Ustawienia → per kurier HH:mm (Europe/Warsaw) + Clear + test ▶.
+- **30 min** i **25 min** przed godziną → MP3 kuriera (`res/raw/kurier_*.mp3`), **1× na slot/dzień**.
+- Reset slotów przy „Nowy dzień”. Wspólna kolejka audio z alertem imiennym (bez nakładania).
+- Tick ~30 s gdy aplikacja działa (tablet keep-screen-on).
+
 ## Etap 1 (nadal)
 
 Landscape PL, 6 kurierów, dokładne maski 1–7, import PNG/JPG/PDF, DEMO, PIN, persistencja.

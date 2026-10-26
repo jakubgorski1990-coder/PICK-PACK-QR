@@ -184,6 +184,59 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
+        SectionTitle("Godzina graniczna kuriera (Europe/Warsaw)")
+        Text(
+            "Audio −30 min i −25 min przed godziną (1× na slot/dzień). Kolejka wspólna z alertem imiennym.",
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
+        val deadlines = snapshot.settings.courierDeadlines
+        SettingSwitch(
+            label = "Włącz alerty godzin kurierów",
+            checked = deadlines.enabled,
+            onChange = { v -> viewModel.updateCourierDeadlines { it.copy(enabled = v) } },
+        )
+        snapshot.couriers.forEach { c ->
+            val d = deadlines.forCourier(c.id)
+            var hh by remember(c.id, d.hour) { mutableStateOf(d.hour?.toString().orEmpty()) }
+            var mm by remember(c.id, d.minute) { mutableStateOf(d.minute?.toString()?.padStart(2, '0').orEmpty()) }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(c.displayName, color = Color.White, modifier = Modifier.width(120.dp), fontSize = 13.sp)
+                OutlinedTextField(
+                    value = hh,
+                    onValueChange = { hh = it.filter { ch -> ch.isDigit() }.take(2) },
+                    label = { Text("HH") },
+                    modifier = Modifier.width(72.dp),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Text(":", color = Color.White)
+                OutlinedTextField(
+                    value = mm,
+                    onValueChange = { mm = it.filter { ch -> ch.isDigit() }.take(2) },
+                    label = { Text("MM") },
+                    modifier = Modifier.width(72.dp),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Spacer(Modifier.width(6.dp))
+                Button(onClick = {
+                    val h = hh.toIntOrNull()
+                    val m = mm.toIntOrNull() ?: 0
+                    if (h != null && h in 0..23 && m in 0..59) {
+                        viewModel.setCourierDeadline(c.id, h, m)
+                    }
+                }) { Text("Zapisz") }
+                TextButton(onClick = {
+                    hh = ""; mm = ""
+                    viewModel.setCourierDeadline(c.id, null, null)
+                }) { Text("Clear") }
+                TextButton(onClick = { viewModel.testKurierSound(c.id) }) { Text("▶") }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+
+        Spacer(Modifier.height(16.dp))
         SettingSwitch(
             label = "Keep screen on",
             checked = snapshot.settings.keepScreenOn,
@@ -320,6 +373,110 @@ fun SettingsScreen(
                     )
                 }) { Text("Zapisz") }
                 TextButton(onClick = { viewModel.deleteNamedPerson(entry.id) }) { Text("Usuń") }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        SectionTitle("Alert głosowy — statusy imienne")
+        Text(
+            "MP3 gdy zamówienie siedzi w statusie imiennym > próg. " +
+                "Wiek: pole API date_in_status (fallback: date_confirmed → date_add).",
+            color = Color.Gray,
+            fontSize = 12.sp,
+        )
+        val alertCfg = snapshot.settings.namedStatusAlert
+        SettingSwitch(
+            label = "Włącz alert imienny",
+            checked = alertCfg.enabled,
+            onChange = { v -> viewModel.updateNamedStatusAlert { it.copy(enabled = v) } },
+        )
+        var threshText by remember(alertCfg.thresholdMinutes) {
+            mutableStateOf(alertCfg.thresholdMinutes.toString())
+        }
+        var coolText by remember(alertCfg.cooldownMinutes) {
+            mutableStateOf(alertCfg.cooldownMinutes.toString())
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = threshText,
+                onValueChange = { threshText = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Próg (min), domyślnie 30") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = coolText,
+                onValueChange = { coolText = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Cooldownoldown (min), domyślnie 10") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = {
+                viewModel.updateNamedStatusAlert {
+                    it.copy(
+                        thresholdMinutes = threshText.toIntOrNull()?.coerceIn(1, 24 * 60) ?: 30,
+                        cooldownMinutes = coolText.toIntOrNull()?.coerceIn(1, 120) ?: 10,
+                    )
+                }
+            }) { Text("Zapisz") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { viewModel.testNamedAlertSound() }) { Text("Test dźwięku") }
+            Button(onClick = { viewModel.checkNamedAlertNow() }) { Text("Sprawdź teraz") }
+        }
+        val alertUi = snapshot.namedAlert
+        Text(
+            when {
+                alertUi.lastError != null -> "Ostatni check: błąd — ${alertUi.lastError}"
+                alertUi.active -> "Wskaźnik: AKTYWNY (${alertUi.overdueCount} przeterminowanych)"
+                else -> "Wskaźnik: spokój"
+            },
+            color = if (alertUi.active) WarehouseAmber else Color.LightGray,
+            fontSize = 12.sp,
+        )
+        var newStatusId by remember { mutableStateOf("") }
+        var newStatusName by remember { mutableStateOf("") }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = newStatusId,
+                onValueChange = { newStatusId = it.filter { ch -> ch.isDigit() } },
+                label = { Text("statusId BL") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.width(140.dp),
+                singleLine = true,
+            )
+            Spacer(Modifier.width(8.dp))
+            OutlinedTextField(
+                value = newStatusName,
+                onValueChange = { newStatusName = it },
+                label = { Text("Imię / nazwa") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = {
+                viewModel.upsertNamedStatus(newStatusId.toIntOrNull() ?: 0, newStatusName)
+                newStatusId = ""
+                newStatusName = ""
+            }) { Text("Dodaj") }
+        }
+        alertCfg.statuses.forEach { ref ->
+            var name by remember(ref.statusId, ref.displayName) { mutableStateOf(ref.displayName) }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            ) {
+                Text("${ref.statusId}", color = WarehouseAmber, modifier = Modifier.width(80.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                )
+                Button(onClick = { viewModel.upsertNamedStatus(ref.statusId, name) }) { Text("Zapisz") }
+                TextButton(onClick = { viewModel.deleteNamedStatus(ref.statusId) }) { Text("Usuń") }
             }
         }
 

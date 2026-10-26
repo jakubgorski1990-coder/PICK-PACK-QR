@@ -42,13 +42,56 @@ data class DeliveryMapping(
     }
 }
 
-/** Minimal order fields for pool counting — never store customer PII. */
+/** Minimal order fields for pool counting / alerts — never store customer PII. */
 data class PoolOrder(
     val orderId: Long,
     val statusId: Int,
     val deliveryMethodId: Int?,
     val deliveryMethodName: String?,
     val confirmed: Boolean,
+    /**
+     * Unix seconds when the order entered the current status (`date_in_status` from getOrders).
+     * Fallback chain in client: date_in_status → date_confirmed → date_add.
+     */
+    val dateInStatusEpochSec: Long? = null,
+)
+
+/** BaseLinker status mapped to a person name for the imienny voice alert. */
+data class NamedStatusRef(
+    val statusId: Int,
+    val displayName: String,
+)
+
+data class NamedStatusAlertConfig(
+    val enabled: Boolean = true,
+    /** Alert when any order has been in a named status longer than this (default 30). */
+    val thresholdMinutes: Int = 30,
+    /** Minimum gap between MP3 plays while condition stays true (default 10). */
+    val cooldownMinutes: Int = 10,
+    val statuses: List<NamedStatusRef> = emptyList(),
+) {
+    companion object {
+        fun defaultSeed(): List<NamedStatusRef> = listOf(
+            NamedStatusRef(356748, "ANIA"),
+            NamedStatusRef(356749, "ANIA SZ"),
+            NamedStatusRef(356750, "Bartek"),
+            NamedStatusRef(356751, "Jakub"),
+            NamedStatusRef(356752, "Kamil"),
+            NamedStatusRef(356753, "Klaudia"),
+            NamedStatusRef(356754, "Michał"),
+            NamedStatusRef(356755, "Ola"),
+            NamedStatusRef(356756, "PBTO"),
+            NamedStatusRef(356757, "Łukasz"),
+        )
+    }
+}
+
+data class NamedAlertState(
+    val active: Boolean = false,
+    val overdueCount: Int = 0,
+    val lastPlayedEpochMs: Long? = null,
+    val lastCheckEpochMs: Long? = null,
+    val lastError: String? = null,
 )
 
 data class BlStatus(

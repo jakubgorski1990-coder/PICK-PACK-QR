@@ -234,6 +234,14 @@ private fun TopBar(
             Text(DemoContent.BANNER, color = WarehouseAmber, fontSize = 12.sp)
         }
         Spacer(Modifier.weight(1f))
+        if (snapshot.namedAlert.active) {
+            Text(
+                "⚠ Imienny (${snapshot.namedAlert.overdueCount})",
+                color = WarehouseAmber,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.width(10.dp))
+        }
         Text(snapshot.connectionLabel, color = WarehouseMuted, fontSize = 13.sp)
         if (undoAvailable) {
             TextButton(onClick = onUndo) {

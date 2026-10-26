@@ -17,6 +17,10 @@ import pl.pickpack.panel.domain.CourierState
 import pl.pickpack.panel.domain.DefaultCouriers
 import pl.pickpack.panel.domain.DeliveryMapping
 import pl.pickpack.panel.domain.GroupId
+import pl.pickpack.panel.domain.CourierDeadline
+import pl.pickpack.panel.domain.CourierDeadlineConfig
+import pl.pickpack.panel.domain.NamedStatusAlertConfig
+import pl.pickpack.panel.domain.NamedStatusRef
 import pl.pickpack.panel.domain.PoolFilterConfig
 import java.security.MessageDigest
 
@@ -42,6 +46,10 @@ class SettingsDataStore(private val context: Context) {
         val ttsEnabled = booleanPreferencesKey("tts_enabled")
         val poolFilterJson = stringPreferencesKey("pool_filter_json")
         val imienneTimeoutSec = intPreferencesKey("imienne_timeout_sec")
+        val namedStatusAlertJson = stringPreferencesKey("named_status_alert_json")
+        val namedStatusSeeded = booleanPreferencesKey("named_status_seeded")
+        val courierDeadlinesJson = stringPreferencesKey("courier_deadlines_json")
+        val courierDeadlinePlayedJson = stringPreferencesKey("courier_deadline_played_json")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -54,6 +62,10 @@ class SettingsDataStore(private val context: Context) {
 
     val poolFilterFlow: Flow<PoolFilterConfig> = context.dataStore.data.map { prefs ->
         parsePoolFilter(prefs[Keys.poolFilterJson])
+    }
+
+    val namedStatusAlertFlow: Flow<NamedStatusAlertConfig> = context.dataStore.data.map { prefs ->
+        parseNamedStatusAlert(prefs[Keys.namedStatusAlertJson])
     }
 
     suspend fun updateSettings(transform: (AppSettings) -> AppSettings) {
@@ -74,6 +86,8 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.ttsEnabled] = next.ttsEnabled
             prefs[Keys.poolFilterJson] = encodePoolFilter(next.poolFilter)
             prefs[Keys.imienneTimeoutSec] = next.imienneTimeoutSec.coerceIn(5, 300)
+            prefs[Keys.namedStatusAlertJson] = encodeNamedStatusAlert(next.namedStatusAlert)
+            prefs[Keys.courierDeadlinesJson] = encodeCourierDeadlines(next.courierDeadlines)
         }
     }
 
@@ -81,6 +95,54 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { prefs ->
             val current = parsePoolFilter(prefs[Keys.poolFilterJson])
             prefs[Keys.poolFilterJson] = encodePoolFilter(transform(current))
+        }
+    }
+
+    suspend fun updateNamedStatusAlert(transform: (NamedStatusAlertConfig) -> NamedStatusAlertConfig) {
+        context.dataStore.edit { prefs ->
+            val current = parseNamedStatusAlert(prefs[Keys.namedStatusAlertJson])
+            prefs[Keys.namedStatusAlertJson] = encodeNamedStatusAlert(transform(current))
+        }
+    }
+
+    /** Seeds the 10 default imienny statuses once. */
+    suspend fun seedNamedStatusesIfNeeded() {
+        context.dataStore.edit { prefs ->
+            if (prefs[Keys.namedStatusSeeded] == true) return@edit
+            val current = parseNamedStatusAlert(prefs[Keys.namedStatusAlertJson])
+            val seeded = if (current.statuses.isEmpty()) {
+                current.copy(statuses = NamedStatusAlertConfig.defaultSeed())
+            } else {
+                current
+            }
+            prefs[Keys.namedStatusAlertJson] = encodeNamedStatusAlert(seeded)
+            prefs[Keys.namedStatusSeeded] = true
+        }
+    }
+
+    suspend fun updateCourierDeadlines(transform: (CourierDeadlineConfig) -> CourierDeadlineConfig) {
+        context.dataStore.edit { prefs ->
+            val current = parseCourierDeadlines(prefs[Keys.courierDeadlinesJson])
+            prefs[Keys.courierDeadlinesJson] = encodeCourierDeadlines(transform(current))
+        }
+    }
+
+    val courierDeadlinePlayedFlow: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+        parsePlayedKeys(prefs[Keys.courierDeadlinePlayedJson])
+    }
+
+    suspend fun markCourierDeadlinePlayed(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = parsePlayedKeys(prefs[Keys.courierDeadlinePlayedJson]).toMutableSet()
+            current.addAll(keys)
+            prefs[Keys.courierDeadlinePlayedJson] = JSONArray(current.toList()).toString()
+        }
+    }
+
+    suspend fun clearCourierDeadlinePlayed() {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.courierDeadlinePlayedJson] = "[]"
         }
     }
 
@@ -178,6 +240,8 @@ class SettingsDataStore(private val context: Context) {
                 poolFilter = pool,
                 counterConfigured = pool.isCounterRulesReady(),
                 imienneTimeoutSec = this[Keys.imienneTimeoutSec] ?: 15,
+                namedStatusAlert = parseNamedStatusAlert(this[Keys.namedStatusAlertJson]),
+                courierDeadlines = parseCourierDeadlines(this[Keys.courierDeadlinesJson]),
             )
         }
 
@@ -276,6 +340,109 @@ class SettingsDataStore(private val context: Context) {
                 )
             } catch (_: Exception) {
                 PoolFilterConfig()
+            }
+        }
+
+        fun encodeNamedStatusAlert(cfg: NamedStatusAlertConfig): String {
+            val root = JSONObject()
+            root.put("enabled", cfg.enabled)
+            root.put("thresholdMinutes", cfg.thresholdMinutes)
+            root.put("cooldownMinutes", cfg.cooldownMinutes)
+            val arr = JSONArray()
+            cfg.statuses.forEach { s ->
+                arr.put(
+                    JSONObject()
+                        .put("statusId", s.statusId)
+                        .put("displayName", s.displayName)
+                )
+            }
+            root.put("statuses", arr)
+            return root.toString()
+        }
+
+        fun parseNamedStatusAlert(raw: String?): NamedStatusAlertConfig {
+            if (raw.isNullOrBlank()) {
+                return NamedStatusAlertConfig(statuses = emptyList())
+            }
+            return try {
+                val o = JSONObject(raw)
+                val arr = o.optJSONArray("statuses") ?: JSONArray()
+                val statuses = buildList {
+                    for (i in 0 until arr.length()) {
+                        val s = arr.getJSONObject(i)
+                        val id = s.optInt("statusId", 0)
+                        val name = s.optString("displayName")
+                        if (id > 0 && name.isNotBlank()) {
+                            add(NamedStatusRef(id, name))
+                        }
+                    }
+                }
+                NamedStatusAlertConfig(
+                    enabled = o.optBoolean("enabled", true),
+                    thresholdMinutes = o.optInt("thresholdMinutes", 30).coerceIn(1, 24 * 60),
+                    cooldownMinutes = o.optInt("cooldownMinutes", 10).coerceIn(1, 120),
+                    statuses = statuses,
+                )
+            } catch (_: Exception) {
+                NamedStatusAlertConfig()
+            }
+        }
+
+        fun encodeCourierDeadlines(cfg: CourierDeadlineConfig): String {
+            val root = JSONObject()
+            root.put("enabled", cfg.enabled)
+            val arr = JSONArray()
+            cfg.deadlines.forEach { d ->
+                arr.put(
+                    JSONObject()
+                        .put("courierId", d.courierId)
+                        .put("hour", d.hour)
+                        .put("minute", d.minute)
+                )
+            }
+            root.put("deadlines", arr)
+            return root.toString()
+        }
+
+        fun parseCourierDeadlines(raw: String?): CourierDeadlineConfig {
+            val defaults = DefaultCouriers.ALL.map { CourierDeadline(it.id) }
+            if (raw.isNullOrBlank()) return CourierDeadlineConfig(deadlines = defaults)
+            return try {
+                val o = JSONObject(raw)
+                val arr = o.optJSONArray("deadlines") ?: JSONArray()
+                val parsed = buildList {
+                    for (i in 0 until arr.length()) {
+                        val d = arr.getJSONObject(i)
+                        add(
+                            CourierDeadline(
+                                courierId = d.optString("courierId"),
+                                hour = if (d.has("hour") && !d.isNull("hour")) d.getInt("hour") else null,
+                                minute = if (d.has("minute") && !d.isNull("minute")) d.getInt("minute") else null,
+                            )
+                        )
+                    }
+                }.filter { it.courierId.isNotBlank() }
+                val byId = parsed.associateBy { it.courierId }
+                CourierDeadlineConfig(
+                    enabled = o.optBoolean("enabled", true),
+                    deadlines = DefaultCouriers.ALL.map { def ->
+                        byId[def.id] ?: CourierDeadline(def.id)
+                    },
+                )
+            } catch (_: Exception) {
+                CourierDeadlineConfig(deadlines = defaults)
+            }
+        }
+
+        fun parsePlayedKeys(raw: String?): Set<String> {
+            if (raw.isNullOrBlank()) return emptySet()
+            return try {
+                val arr = JSONArray(raw)
+                buildSet {
+                    for (i in 0 until arr.length()) add(arr.getString(i))
+                }
+            } catch (_: Exception) {
+                emptySet()
             }
         }
     }
