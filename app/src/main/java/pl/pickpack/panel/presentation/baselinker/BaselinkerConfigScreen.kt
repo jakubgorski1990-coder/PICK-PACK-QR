@@ -97,10 +97,10 @@ fun BaselinkerConfigScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("Statusy puli PP1 / PP2 (osobne status_id)", color = WarehouseAmber)
+        Text("Statusy puli PP1 / PP2", color = WarehouseAmber)
         Text(
-            "Pick/Pack 1 i 2 to dwa różne statusy BL. Licznik pod QR grupy = getOrders(status_id tej grupy). " +
-                "Wybierz grupę, potem chip statusu → zapis + auto-sync.",
+            "Pick/Pack 1 i 2 = dwa różne statusy BL. Licznik pod QR = zamówienia w statusie tej grupy. " +
+                "Wybierz grupę, potem chip → zapis + auto-sync.",
             color = Color.Gray,
             fontSize = 12.sp,
         )
@@ -162,7 +162,7 @@ fun BaselinkerConfigScreen(
         }
         if (!pool.isGroupConfigured(GroupId.PICK_PACK_1) || !pool.isGroupConfigured(GroupId.PICK_PACK_2)) {
             Text(
-                "⚠ Ustaw status_id dla obu grup (PP1 i PP2), żeby oba liczniki działały.",
+                "⚠ Ustaw numer statusu dla obu grup (PP1 i PP2), żeby oba liczniki działały.",
                 color = Color.Red,
                 fontSize = 12.sp,
             )
@@ -252,9 +252,9 @@ private fun GroupStatusCard(
             Text(title, color = Color.White, fontSize = 14.sp)
             Spacer(Modifier.weight(1f))
             Text(
-                statusId?.let { "status_id $it" } ?: "brak",
+                statusId?.toString() ?: "—",
                 color = if (statusId != null) WarehouseAmber else Color.Gray,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -262,7 +262,7 @@ private fun GroupStatusCard(
             OutlinedTextField(
                 value = manual,
                 onValueChange = { manual = it.filter { ch -> ch.isDigit() } },
-                label = { Text("status_id ręcznie") },
+                placeholder = { Text("12345") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.weight(1f),
                 singleLine = true,

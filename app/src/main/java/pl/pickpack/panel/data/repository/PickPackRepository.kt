@@ -232,7 +232,7 @@ class PickPackRepository(
                 Triple(0, "synchronizacja…", true)
             allActive || variantKey?.mask == 7 -> Triple(
                 BaselinkerOrderPoolProvider.countInPoolStatuses(orders, onlyConfirmed, groupStatusId),
-                "PP start: status_id $groupStatusId",
+                null, // start: only the waiting count under QR — no status_id label
                 false,
             )
             !pool.hasDeliveryMappings() -> Triple(
@@ -248,7 +248,7 @@ class PickPackRepository(
                     onlyConfirmed = onlyConfirmed,
                     statusId = groupStatusId,
                 ),
-                "wariant filtrów: delivery · status $groupStatusId",
+                "wariant filtrów",
                 true,
             )
         }
