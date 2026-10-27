@@ -297,7 +297,12 @@ class SettingsDataStore(private val context: Context) {
             root.put("syncIntervalSec", cfg.syncIntervalSec)
             root.put("onlyConfirmed", cfg.onlyConfirmed)
             root.put("estimatedAlertsEnabled", cfg.estimatedAlertsEnabled)
-            root.put("statusIds", JSONArray(cfg.statusIds))
+            // Persist per-group IDs; migrate legacy statusIds[0]/[1] on write.
+            val pp1 = cfg.pickPack1StatusId ?: cfg.statusIds.getOrNull(0)
+            val pp2 = cfg.pickPack2StatusId ?: cfg.statusIds.getOrNull(1)
+            if (pp1 != null) root.put("pickPack1StatusId", pp1)
+            if (pp2 != null) root.put("pickPack2StatusId", pp2)
+            root.put("statusIds", JSONArray())
             val maps = JSONArray()
             cfg.deliveryMappings
                 .groupBy { it.courierId }
@@ -325,6 +330,12 @@ class SettingsDataStore(private val context: Context) {
                 val statusIds = buildList {
                     for (i in 0 until statuses.length()) add(statuses.getInt(i))
                 }
+                val pp1 = if (o.has("pickPack1StatusId") && !o.isNull("pickPack1StatusId")) {
+                    o.getInt("pickPack1StatusId")
+                } else null
+                val pp2 = if (o.has("pickPack2StatusId") && !o.isNull("pickPack2StatusId")) {
+                    o.getInt("pickPack2StatusId")
+                } else null
                 val mapsArr = o.optJSONArray("deliveryMappings") ?: JSONArray()
                 val rawMaps = buildList {
                     for (i in 0 until mapsArr.length()) {
@@ -357,6 +368,8 @@ class SettingsDataStore(private val context: Context) {
                     syncIntervalSec = o.optInt("syncIntervalSec", 60).coerceIn(15, 600),
                     onlyConfirmed = o.optBoolean("onlyConfirmed", true),
                     estimatedAlertsEnabled = o.optBoolean("estimatedAlertsEnabled", false),
+                    pickPack1StatusId = pp1,
+                    pickPack2StatusId = pp2,
                     statusIds = statusIds,
                     deliveryMappings = maps,
                 )

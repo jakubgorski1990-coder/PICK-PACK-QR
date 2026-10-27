@@ -32,9 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pickpack.panel.domain.BlStatus
+import pl.pickpack.panel.domain.GroupId
 import pl.pickpack.panel.presentation.settings.DeliveryMappingEditor
 import pl.pickpack.panel.presentation.theme.WarehouseAmber
 import pl.pickpack.panel.presentation.theme.WarehouseNavy
+import pl.pickpack.panel.presentation.theme.WarehouseSlate
 import pl.pickpack.panel.viewmodel.MainViewModel
 
 @Composable
@@ -47,14 +49,12 @@ fun BaselinkerConfigScreen(
     val pool = snapshot.settings.poolFilter
 
     var tokenInput by remember { mutableStateOf("") }
-    var statusIdsText by remember(pool.statusIds) {
-        mutableStateOf(pool.statusIds.joinToString(","))
-    }
     var intervalText by remember(pool.syncIntervalSec) {
         mutableStateOf(pool.syncIntervalSec.toString())
     }
     var statuses by remember { mutableStateOf<List<BlStatus>>(emptyList()) }
     var statusError by remember { mutableStateOf<String?>(null) }
+    var assigningGroup by remember { mutableStateOf(GroupId.PICK_PACK_1) }
 
     Column(
         modifier = Modifier
@@ -97,68 +97,74 @@ fun BaselinkerConfigScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("Statusy puli (status_id — kolejka pick)", color = WarehouseAmber)
+        Text("Statusy puli PP1 / PP2 (osobne status_id)", color = WarehouseAmber)
         Text(
-            "Wybierz status(y) chipem lub wpisz ID → zapis + auto-sync getOrders. " +
-                "PP1/PP2 wariant startowy = count z tych status_id (paginacja). " +
-                "Wariant częściowy = filtr delivery (sektor mapowania).",
+            "Pick/Pack 1 i 2 to dwa różne statusy BL. Licznik pod QR grupy = getOrders(status_id tej grupy). " +
+                "Wybierz grupę, potem chip statusu → zapis + auto-sync.",
             color = Color.Gray,
             fontSize = 12.sp,
         )
-        OutlinedTextField(
-            value = statusIdsText,
-            onValueChange = { statusIdsText = it },
-            label = { Text("ID statusów, przecinek np. 1051,1291") },
-            modifier = Modifier.fillMaxWidth(),
+        Spacer(Modifier.height(6.dp))
+        GroupStatusCard(
+            title = GroupId.PICK_PACK_1.defaultName,
+            statusId = pool.statusIdFor(GroupId.PICK_PACK_1),
+            selected = assigningGroup == GroupId.PICK_PACK_1,
+            onSelectGroup = { assigningGroup = GroupId.PICK_PACK_1 },
+            onClear = {
+                viewModel.updatePoolFilter { it.withStatusId(GroupId.PICK_PACK_1, null) }
+            },
+            onManualId = { id ->
+                viewModel.updatePoolFilter { it.withStatusId(GroupId.PICK_PACK_1, id) }
+            },
         )
-        Row {
-            Button(onClick = {
-                viewModel.loadStatuses { result ->
-                    result.onSuccess {
-                        statuses = it
-                        statusError = null
-                    }.onFailure {
-                        statusError = it.message
-                        statuses = emptyList()
-                    }
+        Spacer(Modifier.height(6.dp))
+        GroupStatusCard(
+            title = GroupId.PICK_PACK_2.defaultName,
+            statusId = pool.statusIdFor(GroupId.PICK_PACK_2),
+            selected = assigningGroup == GroupId.PICK_PACK_2,
+            onSelectGroup = { assigningGroup = GroupId.PICK_PACK_2 },
+            onClear = {
+                viewModel.updatePoolFilter { it.withStatusId(GroupId.PICK_PACK_2, null) }
+            },
+            onManualId = { id ->
+                viewModel.updatePoolFilter { it.withStatusId(GroupId.PICK_PACK_2, id) }
+            },
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = {
+            viewModel.loadStatuses { result ->
+                result.onSuccess {
+                    statuses = it
+                    statusError = null
+                }.onFailure {
+                    statusError = it.message
+                    statuses = emptyList()
                 }
-            }) { Text("Pobierz listę statusów") }
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = {
-                val ids = statusIdsText.split(",")
-                    .mapNotNull { it.trim().toIntOrNull() }
-                // Persists statusIds and triggers pool sync (counters PP1/PP2).
-                viewModel.updatePoolFilter { it.copy(statusIds = ids) }
-            }) { Text("Zapisz + sync") }
-        }
-        if (pool.statusIds.isEmpty()) {
-            Text(
-                "⚠ Brak wybranego status_id puli — liczniki PP zostaną 0 / nieskonfigurowane.",
-                color = Color.Red,
-                fontSize = 12.sp,
-            )
-        } else {
-            Text(
-                "Aktywne status_id puli: ${pool.statusIds.joinToString(", ")}",
-                color = WarehouseAmber,
-                fontSize = 12.sp,
-            )
-        }
+            }
+        }) { Text("Pobierz listę statusów BL") }
+        Text(
+            "Przypisywanie chipów do: ${assigningGroup.defaultName}",
+            color = WarehouseAmber,
+            fontSize = 12.sp,
+        )
         statusError?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
         statuses.forEach { s ->
+            val selectedForGroup = pool.statusIdFor(assigningGroup) == s.id
             FilterChip(
-                selected = s.id in pool.statusIds,
+                selected = selectedForGroup,
                 onClick = {
-                    val next = if (s.id in pool.statusIds) {
-                        pool.statusIds - s.id
-                    } else {
-                        pool.statusIds + s.id
-                    }
-                    statusIdsText = next.joinToString(",")
-                    viewModel.updatePoolFilter { it.copy(statusIds = next) }
+                    val next = if (selectedForGroup) null else s.id
+                    viewModel.updatePoolFilter { it.withStatusId(assigningGroup, next) }
                 },
                 label = { Text("${s.id} — ${s.name}") },
                 modifier = Modifier.padding(vertical = 2.dp),
+            )
+        }
+        if (!pool.isGroupConfigured(GroupId.PICK_PACK_1) || !pool.isGroupConfigured(GroupId.PICK_PACK_2)) {
+            Text(
+                "⚠ Ustaw status_id dla obu grup (PP1 i PP2), żeby oba liczniki działały.",
+                color = Color.Red,
+                fontSize = 12.sp,
             )
         }
 
@@ -219,3 +225,57 @@ fun BaselinkerConfigScreen(
         )
     }
 }
+
+@Composable
+private fun GroupStatusCard(
+    title: String,
+    statusId: Int?,
+    selected: Boolean,
+    onSelectGroup: () -> Unit,
+    onClear: () -> Unit,
+    onManualId: (Int) -> Unit,
+) {
+    var manual by remember(statusId) { mutableStateOf(statusId?.toString().orEmpty()) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) Color(0xFF2A3A28) else WarehouseSlate)
+            .padding(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(
+                selected = selected,
+                onClick = onSelectGroup,
+                label = { Text(if (selected) "Aktywne przypisanie" else "Ustaw dla tej grupy") },
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(title, color = Color.White, fontSize = 14.sp)
+            Spacer(Modifier.weight(1f))
+            Text(
+                statusId?.let { "status_id $it" } ?: "brak",
+                color = if (statusId != null) WarehouseAmber else Color.Gray,
+                fontSize = 12.sp,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = manual,
+                onValueChange = { manual = it.filter { ch -> ch.isDigit() } },
+                label = { Text("status_id ręcznie") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            Spacer(Modifier.width(6.dp))
+            Button(onClick = {
+                manual.toIntOrNull()?.let(onManualId)
+            }) { Text("Zapisz") }
+            TextButton(onClick = {
+                manual = ""
+                onClear()
+            }) { Text("Clear") }
+        }
+    }
+}
+

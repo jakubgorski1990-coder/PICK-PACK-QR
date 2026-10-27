@@ -40,10 +40,18 @@ class PoolCountTest {
     }
 
     @Test
-    fun startVariant_countInPoolStatuses_ignoresDelivery() {
-        // Full-set / start variant: raw status_id pool count (deduped).
-        assertThat(BaselinkerOrderPoolProvider.countInPoolStatuses(orders, onlyConfirmed = true))
-            .isEqualTo(4)
+    fun startVariant_countInPoolStatuses_filtersByGroupStatus() {
+        val mixed = listOf(
+            PoolOrder(1, 10, 100, "InPost", true),
+            PoolOrder(2, 20, 200, "DPD", true),
+            PoolOrder(3, 10, 100, "InPost", true),
+        )
+        assertThat(
+            BaselinkerOrderPoolProvider.countInPoolStatuses(mixed, onlyConfirmed = true, statusId = 10),
+        ).isEqualTo(2)
+        assertThat(
+            BaselinkerOrderPoolProvider.countInPoolStatuses(mixed, onlyConfirmed = true, statusId = 20),
+        ).isEqualTo(1)
     }
 
     @Test
@@ -59,6 +67,18 @@ class PoolCountTest {
         val more = orders + PoolOrder(5, 10, null, "Kurier STD_2do PL", true)
         val n = BaselinkerOrderPoolProvider.countMatching(
             more, mappings, activeCourierIds = setOf("dhl"), onlyConfirmed = true,
+        )
+        assertThat(n).isEqualTo(1)
+    }
+
+    @Test
+    fun partialVariant_respectsGroupStatusId() {
+        val mixed = listOf(
+            PoolOrder(1, 10, 100, "InPost", true),
+            PoolOrder(2, 20, 100, "InPost", true),
+        )
+        val n = BaselinkerOrderPoolProvider.countMatching(
+            mixed, mappings, activeCourierIds = setOf("inpost"), onlyConfirmed = true, statusId = 20,
         )
         assertThat(n).isEqualTo(1)
     }

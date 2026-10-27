@@ -1,31 +1,50 @@
 package pl.pickpack.panel.domain
 
 /**
- * Pick/Pack pool filter using only BaseLinker getOrders capabilities:
- * - `status_id` (API input) — pick-pool queue statuses
- * - `get_unconfirmed_orders` / confirmed
- * - delivery_method_id / delivery_method (response only — no delivery input filter)
+ * Pick/Pack pool filter using only BaseLinker getOrders capabilities.
  *
- * Counter modes:
- * - **Start variant** (wszyscy kurierzy aktywni, mask 7): count = orders in status_id puli
- * - **Partial variants**: count = status_id cache ∩ delivery aktywnych kurierów („Szacowana…”)
+ * PP1 i PP2 mają **osobne** status_id BL:
+ * - Start variant grupy = count getOrders(status_id tej grupy)
+ * - Partial = te zamówienia ∩ delivery aktywnych kurierów grupy
  */
 data class PoolFilterConfig(
     val syncIntervalSec: Int = 60,
     val onlyConfirmed: Boolean = true,
-    /** Status IDs of the pick-pool queue (getOrders status_id). */
+    /** BaseLinker status_id for Pick/Pack 1 queue. */
+    val pickPack1StatusId: Int? = null,
+    /** BaseLinker status_id for Pick/Pack 2 queue. */
+    val pickPack2StatusId: Int? = null,
+    /**
+     * Legacy shared list (older builds). Migrated into [pickPack1StatusId]/[pickPack2StatusId]
+     * when those are null.
+     */
     val statusIds: List<Int> = emptyList(),
     val deliveryMappings: List<DeliveryMapping> = emptyList(),
     /** Estimated-count alerts stay off by default (Etap 3). */
     val estimatedAlertsEnabled: Boolean = false,
 ) {
-    /** Start-variant / sync: only need pool status_id(s). */
-    fun isPoolConfigured(): Boolean = statusIds.isNotEmpty()
+    fun statusIdFor(groupId: GroupId): Int? = when (groupId) {
+        GroupId.PICK_PACK_1 -> pickPack1StatusId ?: statusIds.getOrNull(0)
+        // Legacy: only map second list entry to PP2 — never reuse PP1's status.
+        GroupId.PICK_PACK_2 -> pickPack2StatusId ?: statusIds.getOrNull(1)
+    }
 
-    /** Partial-variant delivery filter available. */
+    fun withStatusId(groupId: GroupId, statusId: Int?): PoolFilterConfig = when (groupId) {
+        GroupId.PICK_PACK_1 -> copy(pickPack1StatusId = statusId, statusIds = emptyList())
+        GroupId.PICK_PACK_2 -> copy(pickPack2StatusId = statusId, statusIds = emptyList())
+    }
+
+    /** All distinct status IDs used by any group (for sync). */
+    fun allConfiguredStatusIds(): List<Int> =
+        listOfNotNull(statusIdFor(GroupId.PICK_PACK_1), statusIdFor(GroupId.PICK_PACK_2)).distinct()
+
+    fun isGroupConfigured(groupId: GroupId): Boolean = statusIdFor(groupId) != null
+
+    /** At least one group has a pool status_id. */
+    fun isPoolConfigured(): Boolean = allConfiguredStatusIds().isNotEmpty()
+
     fun hasDeliveryMappings(): Boolean = deliveryMappings.any { it.isValid() }
 
-    /** @deprecated Prefer [isPoolConfigured] — delivery mappings are optional for start variant. */
     fun isCounterRulesReady(): Boolean = isPoolConfigured()
 }
 

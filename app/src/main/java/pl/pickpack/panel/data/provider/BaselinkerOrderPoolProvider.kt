@@ -56,11 +56,18 @@ class BaselinkerOrderPoolProvider(
         val groupCourierIds = DefaultCouriers.forGroup(groupId).map { it.id }.toSet()
         val active = activeCourierIds.intersect(groupCourierIds)
         if (active.isEmpty()) return 0
+        val statusId = cfg.statusIdFor(groupId) ?: return null
         val allActive = active == groupCourierIds
         return if (allActive) {
-            countInPoolStatuses(orders.value, cfg.onlyConfirmed)
+            countInPoolStatuses(orders.value, cfg.onlyConfirmed, statusId)
         } else {
-            countMatching(orders.value, cfg.deliveryMappings, active, cfg.onlyConfirmed)
+            countMatching(
+                orders = orders.value,
+                mappings = cfg.deliveryMappings,
+                activeCourierIds = active,
+                onlyConfirmed = cfg.onlyConfirmed,
+                statusId = statusId,
+            )
         }
     }
 
@@ -73,8 +80,9 @@ class BaselinkerOrderPoolProvider(
             return Result.failure(IllegalStateException("Brak tokenu"))
         }
         val cfg = config ?: configProvider()
-        if (cfg.statusIds.isEmpty()) {
-            _syncState.value = SyncState(lastError = "Brak statusów puli — wybierz status_id")
+        val statusIds = cfg.allConfiguredStatusIds()
+        if (statusIds.isEmpty()) {
+            _syncState.value = SyncState(lastError = "Brak statusów puli — ustaw status_id PP1/PP2")
             return Result.failure(IllegalStateException("Brak statusów"))
         }
         val now = System.currentTimeMillis()
@@ -88,7 +96,7 @@ class BaselinkerOrderPoolProvider(
         return try {
             mutex.withLock {
                 val collected = linkedMapOf<Long, PoolOrder>()
-                for (statusId in cfg.statusIds.distinct()) {
+                for (statusId in statusIds) {
                     var idFrom: Long? = null
                     var guard = 0
                     while (guard++ < 50) {
@@ -101,7 +109,8 @@ class BaselinkerOrderPoolProvider(
                         for (o in page) {
                             // API already respects get_unconfirmed_orders; keep soft client filter.
                             if (cfg.onlyConfirmed && !o.confirmed) continue
-                            collected[o.orderId] = o
+                            // Prefer statusId from request if response omits order_status_id.
+                            collected[o.orderId] = if (o.statusId == 0) o.copy(statusId = statusId) else o
                         }
                         if (page.size < 100) break
                         // BaseLinker id_from = fetch orders with id greater than this value.
@@ -138,16 +147,17 @@ class BaselinkerOrderPoolProvider(
 
     companion object {
         /**
-         * Start / full-set variant: count all cached pool orders (already fetched for
-         * configured status_id list) — no delivery filter.
+         * Start / full-set variant for one group: count cached orders in that group's status_id.
          */
         fun countInPoolStatuses(
             orders: List<PoolOrder>,
             onlyConfirmed: Boolean,
+            statusId: Int? = null,
         ): Int {
             val seen = HashSet<Long>()
             var count = 0
             for (order in orders) {
+                if (statusId != null && order.statusId != statusId) continue
                 if (onlyConfirmed && !order.confirmed) continue
                 if (!seen.add(order.orderId)) continue
                 count++
@@ -156,19 +166,20 @@ class BaselinkerOrderPoolProvider(
         }
 
         /**
-         * Partial courier variants: intersect pool cache with delivery methods of
-         * currently active couriers (client-side — getOrders has no delivery input filter).
+         * Partial courier variants: group's status_id ∩ delivery of active couriers.
          */
         fun countMatching(
             orders: List<PoolOrder>,
             mappings: List<DeliveryMapping>,
             activeCourierIds: Set<String>,
             onlyConfirmed: Boolean,
+            statusId: Int? = null,
         ): Int {
             if (activeCourierIds.isEmpty()) return 0
             val seen = HashSet<Long>()
             var count = 0
             for (order in orders) {
+                if (statusId != null && order.statusId != statusId) continue
                 if (onlyConfirmed && !order.confirmed) continue
                 if (!seen.add(order.orderId)) continue
                 val courier = mappings.firstOrNull {
