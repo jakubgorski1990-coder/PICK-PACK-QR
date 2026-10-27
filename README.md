@@ -38,12 +38,13 @@ Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same stat
 
 ## Zakładka IMIENNE
 
-- U góry: **Pick / Pack** | **IMIENNE** — także **swipe w lewo/prawo**.
-- Siatka QR (model na ≥12 i więcej) — kody **maksymalnie duże**, nazwy małe; wszystko na jednym landscape.
+- U góry: kropki stron **Pick / Pack** · **IMIENNE** — także **swipe**.
+- Siatka **przycisków z imionami** (≥20 na landscape, skalowalna). Tap → **jeden duży QR** na środku (tap tła zamyka).
 - Treść: `BLPPT_` + template ID dopełnione do 6 cyfr (wpisz samo `18472`).
-- **Dodawanie osoby:** Ustawienia → sekcja IMIENNE → Imię/nazwa + Template ID → Dodaj. Edycja / kolejność / usuwanie w tej samej sekcji.
-- Po **15 s** bezczynności na IMIENNE (konfigurowalne) auto-powrót do Pick/Pack. Interakcja resetuje timer.
-- Persist Room; eksport/import JSON uwzględnia listę imiennych (bez tokenu). DEMO nie podstawia braków produkcyjnych.
+- **Dodawanie osoby:** Ustawienia → Panel → Imię/nazwa + Template ID.
+- Po **15 s** bezczynności na IMIENNE auto-powrót do Pick/Pack. Interakcja resetuje timer.
+- Landscape: **true fullscreen** (immersive + ciemne tło okna, bez białego letterboxu z lewej).
+- Persist Room; eksport/import JSON (bez tokenu). DEMO nie podstawia braków produkcyjnych.
 
 ## Alert głosowy — statusy imienne
 

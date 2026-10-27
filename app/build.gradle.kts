@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "1.4.4-pp-counters"
+        versionName = "1.5.0-imienne-fullscreen"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

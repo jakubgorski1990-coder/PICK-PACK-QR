@@ -19,6 +19,20 @@ class ImienneGridLayoutTest {
     }
 
     @Test
+    fun buttonGridFitsTwentyOnLandscape() {
+        val (cols, rows) = ImienneGridLayout.buttonDimensions(20, 16f / 9f)
+        assertThat(cols * rows).isAtLeast(20)
+        assertThat(cols).isAtLeast(5)
+        assertThat(rows).isAtMost(5)
+    }
+
+    @Test
+    fun buttonGridScalesBeyondTwenty() {
+        val (cols, rows) = ImienneGridLayout.buttonDimensions(28, 16f / 9f)
+        assertThat(cols * rows).isAtLeast(28)
+    }
+
+    @Test
     fun namedResolvesBlppt() {
         val e = NamedQrEntry("1", "Ada", 18472)
         assertThat(e.resolvedPayload()).isEqualTo("BLPPT_018472")

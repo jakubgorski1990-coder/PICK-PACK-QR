@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.PickPackPanel" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/warehouse_navy</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowFullscreen">false</item>
-        <!-- Content uses Compose safeDrawingPadding; immersive hides bars when focused. -->
+        <!-- Immersive sticky + full-bleed Compose; no letterbox insets. -->
     </style>
 </resources>
