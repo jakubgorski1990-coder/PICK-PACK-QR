@@ -175,8 +175,9 @@ data class NamedQrEntry(
     }
 }
 
-/** Landscape grid dims that fit [count] cells and maximize QR size. */
+/** Landscape grid dims for IMIENNE name buttons / legacy QR cells. */
 object ImienneGridLayout {
+    /** Near-square cells (legacy QR grid). */
     fun dimensions(count: Int, viewportAspect: Float = 16f / 9f): Pair<Int, Int> {
         val n = count.coerceAtLeast(1)
         var bestCols = n
@@ -184,12 +185,42 @@ object ImienneGridLayout {
         var bestScore = -1.0
         for (cols in 1..n) {
             val rows = (n + cols - 1) / cols
-            // Approximate cell aspect under landscape: wider viewport → prefer more cols
             val cellAspect = (viewportAspect * rows) / cols
-            // Prefer near-square cells (QR likes square); score = how close to 1
             val squareScore = 1.0 / (1.0 + kotlin.math.abs(cellAspect - 1.0))
-            val areaScore = 1.0 / (cols * rows) // fewer empty slots slightly better via tighter pack
+            val areaScore = 1.0 / (cols * rows)
             val score = squareScore * 10 + areaScore
+            if (score > bestScore) {
+                bestScore = score
+                bestCols = cols
+                bestRows = rows
+            }
+        }
+        return bestCols to bestRows
+    }
+
+    /**
+     * Dense name-button grid for landscape (≥20 names: 5–8 columns).
+     */
+    fun buttonDimensions(count: Int, viewportAspect: Float = 16f / 9f): Pair<Int, Int> {
+        val n = count.coerceAtLeast(1)
+        if (n >= 16) {
+            val cols = when {
+                n <= 20 -> 5
+                n <= 24 -> 6
+                n <= 28 -> 7
+                else -> 8
+            }.coerceAtMost(n)
+            return cols to ((n + cols - 1) / cols)
+        }
+        // Smaller sets: prefer wider label cells (~2.2 aspect).
+        var bestCols = n
+        var bestRows = 1
+        var bestScore = -1.0
+        val targetAspect = 2.2
+        for (cols in 1..n) {
+            val rows = (n + cols - 1) / cols
+            val cellAspect = (viewportAspect * rows) / cols
+            val score = 1.0 / (1.0 + kotlin.math.abs(cellAspect - targetAspect))
             if (score > bestScore) {
                 bestScore = score
                 bestCols = cols

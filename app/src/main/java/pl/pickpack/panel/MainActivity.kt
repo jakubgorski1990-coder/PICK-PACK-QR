@@ -1,15 +1,17 @@
 package pl.pickpack.panel
 
+import android.graphics.Color
 import android.media.AudioManager
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -26,6 +28,7 @@ import pl.pickpack.panel.presentation.importqr.ImportQrScreen
 import pl.pickpack.panel.presentation.main.MainScreen
 import pl.pickpack.panel.presentation.settings.SettingsScreen
 import pl.pickpack.panel.presentation.theme.PickPackTheme
+import pl.pickpack.panel.presentation.theme.WarehouseNavy
 import pl.pickpack.panel.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
@@ -33,11 +36,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Hardware volume keys adjust media stream (alert MP3s use STREAM_MUSIC).
         @Suppress("DEPRECATION")
         volumeControlStream = AudioManager.STREAM_MUSIC
-        enableEdgeToEdge()
+
+        // True fullscreen landscape: draw under system bars; hide them (sticky immersive).
+        // Do NOT apply horizontal safeDrawingPadding — that caused a white letterbox strip.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.setBackgroundDrawableResource(R.color.warehouse_navy)
         applyImmersiveMode()
+
         setContent {
             PickPackTheme {
                 val panel by viewModel.panel.collectAsStateWithLifecycle()
@@ -49,12 +60,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Edge-to-edge draws under system bars; pad content into the safe drawing area
-                // so the gear / page dots never sit under the status bar (even if bars reappear).
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .safeDrawingPadding(),
+                        .background(WarehouseNavy),
                 ) {
                     val nav = rememberNavController()
                     NavHost(navController = nav, startDestination = "main") {
@@ -106,6 +115,8 @@ class MainActivity : ComponentActivity() {
     private fun applyImmersiveMode() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.isAppearanceLightStatusBars = false
+        controller.isAppearanceLightNavigationBars = false
         controller.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
