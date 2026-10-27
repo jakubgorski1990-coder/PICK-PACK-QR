@@ -91,7 +91,7 @@ class PickPackRepository(
     val settingsFlow: Flow<AppSettings> = settingsStore.settingsFlow.map { s ->
         s.copy(
             baselinkerTokenPresent = tokenStore.hasToken(),
-            counterConfigured = tokenStore.hasToken() && s.poolFilter.isCounterRulesReady(),
+            counterConfigured = tokenStore.hasToken() && s.poolFilter.isPoolConfigured(),
         )
     }
     val courierStatesFlow: Flow<List<CourierState>> = settingsStore.courierStatesFlow
@@ -214,27 +214,34 @@ class PickPackRepository(
             }
             return CounterDisplay.DemoValue(waiting, threshold = 25)
         }
-        val configured = settings.baselinkerTokenPresent && settings.poolFilter.isCounterRulesReady()
+        val pool = settings.poolFilter
+        val configured = settings.baselinkerTokenPresent && pool.isPoolConfigured()
         if (!configured) return CounterDisplay.NotConfigured
         val active = couriers.filter { it.groupId == groupId && it.isActive }.map { it.id }.toSet()
         val groupCourierIds = DefaultCouriers.forGroup(groupId).map { it.id }.toSet()
         val allActive = active == groupCourierIds && active.isNotEmpty()
         val variantKey = QrVariantKey.fromActiveCouriers(groupId, active)
         val orders = blPool.cachedOrders()
-        val onlyConfirmed = settings.poolFilter.onlyConfirmed
-        // Start variant (mask 7 / wszyscy aktywni, szablony 18472/18173): count by status_id.
-        // Partial variants (któryś kurier wyłączony): count by delivery filters, not raw status_id.
+        val onlyConfirmed = pool.onlyConfirmed
+        // Start variant (mask 7): count = getOrders(status_id) cache size.
+        // Partial: delivery filter of active couriers.
         val (waiting, hint, estimated) = when {
             active.isEmpty() -> Triple(0, "brak aktywnych kurierów", true)
+            sync.inProgress && orders.isEmpty() -> Triple(0, "synchronizacja…", true)
             allActive || variantKey?.mask == 7 -> Triple(
                 BaselinkerOrderPoolProvider.countInPoolStatuses(orders, onlyConfirmed),
-                "wariant startowy: count ze status_id puli",
+                "PP start: getOrders status_id ${pool.statusIds.joinToString(",")}",
                 false,
+            )
+            !pool.hasDeliveryMappings() -> Triple(
+                0,
+                "wariant filtrów: brak mapowania delivery",
+                true,
             )
             else -> Triple(
                 BaselinkerOrderPoolProvider.countMatching(
                     orders = orders,
-                    mappings = settings.poolFilter.deliveryMappings,
+                    mappings = pool.deliveryMappings,
                     activeCourierIds = active,
                     onlyConfirmed = onlyConfirmed,
                 ),
@@ -256,8 +263,10 @@ class PickPackRepository(
             val settings = settingsFlow.first()
             val intervalMs = settings.poolFilter.syncIntervalSec.coerceIn(15, 600) * 1000L
             if (!settings.demoMode && settings.baselinkerTokenPresent) {
-                if (settings.poolFilter.isCounterRulesReady()) {
-                    blPool.syncNow(force = false)
+                val cfg = settings.poolFilter
+                latestPoolFilter = cfg
+                if (cfg.isPoolConfigured()) {
+                    blPool.syncNow(force = false, config = cfg)
                 }
                 checkNamedStatusAlert(settings.namedStatusAlert)
             }
@@ -481,6 +490,12 @@ class PickPackRepository(
 
     suspend fun updatePoolFilter(transform: (PoolFilterConfig) -> PoolFilterConfig) {
         settingsStore.updatePoolFilter(transform)
+        val cfg = settingsFlow.first().poolFilter
+        latestPoolFilter = cfg
+        // Persist status_id → immediate pool sync so PP1/PP2 counters update.
+        if (tokenStore.hasToken() && cfg.isPoolConfigured()) {
+            blPool.syncNow(force = true, config = cfg)
+        }
     }
 
     suspend fun setPin(pin: String?) = settingsStore.setPin(pin)
@@ -493,7 +508,11 @@ class PickPackRepository(
         blClient.getOrderStatusList()
     }
 
-    suspend fun syncNow(): Result<Int> = blPool.syncNow(force = true)
+    suspend fun syncNow(): Result<Int> {
+        val cfg = settingsFlow.first().poolFilter
+        latestPoolFilter = cfg
+        return blPool.syncNow(force = true, config = cfg)
+    }
 
     suspend fun upsertVariant(config: QrVariantConfig) = qrProvider.upsertVariant(config)
 
