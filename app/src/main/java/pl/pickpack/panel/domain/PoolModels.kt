@@ -19,8 +19,14 @@ data class PoolFilterConfig(
     /** Estimated-count alerts stay off by default (Etap 3). */
     val estimatedAlertsEnabled: Boolean = false,
 ) {
-    fun isCounterRulesReady(): Boolean =
-        statusIds.isNotEmpty() && deliveryMappings.any { it.isValid() }
+    /** Start-variant / sync: only need pool status_id(s). */
+    fun isPoolConfigured(): Boolean = statusIds.isNotEmpty()
+
+    /** Partial-variant delivery filter available. */
+    fun hasDeliveryMappings(): Boolean = deliveryMappings.any { it.isValid() }
+
+    /** @deprecated Prefer [isPoolConfigured] — delivery mappings are optional for start variant. */
+    fun isCounterRulesReady(): Boolean = isPoolConfigured()
 }
 
 /**

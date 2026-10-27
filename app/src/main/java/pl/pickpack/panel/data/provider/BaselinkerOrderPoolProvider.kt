@@ -35,7 +35,7 @@ class BaselinkerOrderPoolProvider(
 
     override suspend fun isConfigured(): Boolean {
         val cfg = configProvider()
-        return tokenPresent() && cfg.isCounterRulesReady()
+        return tokenPresent() && cfg.isPoolConfigured()
     }
 
     override fun connectionLabel(): String {
@@ -44,7 +44,7 @@ class BaselinkerOrderPoolProvider(
             !tokenPresent() -> "BL: brak tokenu"
             state.inProgress -> "BL: synchronizacja…"
             state.lastError != null -> "BL: błąd sync"
-            state.lastSuccessEpochMs != null -> "BL: OK (szacunek)"
+            state.lastSuccessEpochMs != null -> "BL: OK (${state.orderCountCached})"
             else -> "BL: oczekiwanie na sync"
         }
     }
@@ -56,17 +56,25 @@ class BaselinkerOrderPoolProvider(
         val groupCourierIds = DefaultCouriers.forGroup(groupId).map { it.id }.toSet()
         val active = activeCourierIds.intersect(groupCourierIds)
         if (active.isEmpty()) return 0
-        return countMatching(orders.value, cfg.deliveryMappings, active, cfg.onlyConfirmed)
+        val allActive = active == groupCourierIds
+        return if (allActive) {
+            countInPoolStatuses(orders.value, cfg.onlyConfirmed)
+        } else {
+            countMatching(orders.value, cfg.deliveryMappings, active, cfg.onlyConfirmed)
+        }
     }
 
-    suspend fun syncNow(force: Boolean = false): Result<Int> {
+    /**
+     * @param config Prefer explicit config from DataStore — avoid stale [configProvider] race.
+     */
+    suspend fun syncNow(force: Boolean = false, config: PoolFilterConfig? = null): Result<Int> {
         if (!tokenPresent()) {
             _syncState.value = SyncState(lastError = "Brak tokenu")
             return Result.failure(IllegalStateException("Brak tokenu"))
         }
-        val cfg = configProvider()
+        val cfg = config ?: configProvider()
         if (cfg.statusIds.isEmpty()) {
-            _syncState.value = SyncState(lastError = "Brak statusów puli")
+            _syncState.value = SyncState(lastError = "Brak statusów puli — wybierz status_id")
             return Result.failure(IllegalStateException("Brak statusów"))
         }
         val now = System.currentTimeMillis()
@@ -91,12 +99,13 @@ class BaselinkerOrderPoolProvider(
                         )
                         if (page.isEmpty()) break
                         for (o in page) {
+                            // API already respects get_unconfirmed_orders; keep soft client filter.
                             if (cfg.onlyConfirmed && !o.confirmed) continue
                             collected[o.orderId] = o
                         }
                         if (page.size < 100) break
-                        val maxId = page.maxOf { it.orderId }
-                        idFrom = maxId
+                        // BaseLinker id_from = fetch orders with id greater than this value.
+                        idFrom = page.maxOf { it.orderId } + 1
                     }
                 }
                 orders.value = collected.values.toList()

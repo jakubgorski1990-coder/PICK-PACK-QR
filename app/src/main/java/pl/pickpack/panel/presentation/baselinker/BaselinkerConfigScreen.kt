@@ -99,8 +99,9 @@ fun BaselinkerConfigScreen(
         Spacer(Modifier.height(16.dp))
         Text("Statusy puli (status_id — kolejka pick)", color = WarehouseAmber)
         Text(
-            "Wariant startowy (wszyscy kurierzy): licznik = count z tych status_id. " +
-                "Wariant z wyłączonym kurierem: licznik = filtr delivery aktywnych (nie sam status_id).",
+            "Wybierz status(y) chipem lub wpisz ID → zapis + auto-sync getOrders. " +
+                "PP1/PP2 wariant startowy = count z tych status_id (paginacja). " +
+                "Wariant częściowy = filtr delivery (sektor mapowania).",
             color = Color.Gray,
             fontSize = 12.sp,
         )
@@ -126,8 +127,22 @@ fun BaselinkerConfigScreen(
             Button(onClick = {
                 val ids = statusIdsText.split(",")
                     .mapNotNull { it.trim().toIntOrNull() }
+                // Persists statusIds and triggers pool sync (counters PP1/PP2).
                 viewModel.updatePoolFilter { it.copy(statusIds = ids) }
-            }) { Text("Zapisz statusy") }
+            }) { Text("Zapisz + sync") }
+        }
+        if (pool.statusIds.isEmpty()) {
+            Text(
+                "⚠ Brak wybranego status_id puli — liczniki PP zostaną 0 / nieskonfigurowane.",
+                color = Color.Red,
+                fontSize = 12.sp,
+            )
+        } else {
+            Text(
+                "Aktywne status_id puli: ${pool.statusIds.joinToString(", ")}",
+                color = WarehouseAmber,
+                fontSize = 12.sp,
+            )
         }
         statusError?.let { Text(it, color = Color.Red, fontSize = 12.sp) }
         statuses.forEach { s ->
