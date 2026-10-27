@@ -2,7 +2,8 @@
 <resources>
     <style name="Theme.PickPackPanel" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">#FF1A2332</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowFullscreen">false</item>
+        <!-- Content uses Compose safeDrawingPadding; immersive hides bars when focused. -->
     </style>
 </resources>

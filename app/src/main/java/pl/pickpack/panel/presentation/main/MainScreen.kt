@@ -195,7 +195,7 @@ private fun CompactTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(36.dp)
+            .height(40.dp)
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -226,21 +226,21 @@ private fun CompactTopBar(
         }
         Text(snapshot.connectionLabel, color = WarehouseMuted, fontSize = 11.sp)
         if (undoAvailable) {
-            IconButton(onClick = onUndo, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = onUndo, modifier = Modifier.size(40.dp)) {
                 Icon(
                     Icons.Default.Undo,
                     contentDescription = "Cofnij",
                     tint = WarehouseAmber,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
-        IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(40.dp)) {
             Icon(
                 Icons.Default.Settings,
                 contentDescription = "Ustawienia",
                 tint = Color.White,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(22.dp),
             )
         }
     }

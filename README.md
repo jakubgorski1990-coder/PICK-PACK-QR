@@ -69,7 +69,7 @@ Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same stat
 
 ## Etap 1 (nadal)
 
-Landscape PL — **QR max**: cienka belka (zegar HH:mm + kropki stron Pick/Pack·IMIENNE), kompaktowe przyciski kurierów, karty z minimalnym chrome. 6 kurierów, maski 1–7, import PNG/JPG/PDF, DEMO, PIN, persistencja.
+Landscape PL — **QR max**: cienka belka (zegar HH:mm + kropki stron Pick/Pack·IMIENNE), kompaktowe przyciski kurierów, karty z minimalnym chrome. Edge-to-edge + **safeDrawingPadding** / immersive sticky (zębatka poniżej status bara). 6 kurierów, maski 1–7, import PNG/JPG/PDF, DEMO, PIN, persistencja.
 
 ## Poza zakresem (Etap 3)
 
