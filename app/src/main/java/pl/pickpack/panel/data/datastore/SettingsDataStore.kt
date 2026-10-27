@@ -299,14 +299,20 @@ class SettingsDataStore(private val context: Context) {
             root.put("estimatedAlertsEnabled", cfg.estimatedAlertsEnabled)
             root.put("statusIds", JSONArray(cfg.statusIds))
             val maps = JSONArray()
-            cfg.deliveryMappings.forEach { m ->
-                maps.put(
-                    JSONObject()
-                        .put("courierId", m.courierId)
-                        .put("deliveryMethodId", m.deliveryMethodId)
-                        .put("nameContains", m.nameContains)
-                )
-            }
+            cfg.deliveryMappings
+                .groupBy { it.courierId }
+                .map { (id, rows) -> DeliveryMapping.mergeForCourier(id, rows).normalized() }
+                .filter { it.isValid() }
+                .forEach { m ->
+                    val patterns = JSONArray()
+                    m.namePatterns.forEach { patterns.put(it) }
+                    maps.put(
+                        JSONObject()
+                            .put("courierId", m.courierId)
+                            .put("deliveryMethodId", m.deliveryMethodId)
+                            .put("namePatterns", patterns)
+                    )
+                }
             root.put("deliveryMappings", maps)
             return root.toString()
         }
@@ -320,9 +326,17 @@ class SettingsDataStore(private val context: Context) {
                     for (i in 0 until statuses.length()) add(statuses.getInt(i))
                 }
                 val mapsArr = o.optJSONArray("deliveryMappings") ?: JSONArray()
-                val maps = buildList {
+                val rawMaps = buildList {
                     for (i in 0 until mapsArr.length()) {
                         val m = mapsArr.getJSONObject(i)
+                        val patternsArr = m.optJSONArray("namePatterns")
+                        val patterns = buildList {
+                            if (patternsArr != null) {
+                                for (j in 0 until patternsArr.length()) {
+                                    patternsArr.optString(j).trim().takeIf { it.isNotEmpty() }?.let { add(it) }
+                                }
+                            }
+                        }
                         add(
                             DeliveryMapping(
                                 courierId = m.optString("courierId"),
@@ -330,10 +344,15 @@ class SettingsDataStore(private val context: Context) {
                                     m.getInt("deliveryMethodId")
                                 } else null,
                                 nameContains = m.optString("nameContains").ifBlank { null },
+                                namePatterns = patterns,
                             )
                         )
                     }
                 }
+                val maps = rawMaps
+                    .groupBy { it.courierId }
+                    .map { (id, rows) -> DeliveryMapping.mergeForCourier(id, rows).normalized() }
+                    .filter { it.isValid() }
                 PoolFilterConfig(
                     syncIntervalSec = o.optInt("syncIntervalSec", 60).coerceIn(15, 600),
                     onlyConfirmed = o.optBoolean("onlyConfirmed", true),

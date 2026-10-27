@@ -32,11 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pickpack.panel.domain.BlStatus
-import pl.pickpack.panel.domain.DefaultCouriers
-import pl.pickpack.panel.domain.DeliveryMapping
+import pl.pickpack.panel.presentation.settings.DeliveryMappingEditor
 import pl.pickpack.panel.presentation.theme.WarehouseAmber
 import pl.pickpack.panel.presentation.theme.WarehouseNavy
-import pl.pickpack.panel.presentation.theme.WarehouseSlate
 import pl.pickpack.panel.viewmodel.MainViewModel
 
 @Composable
@@ -185,60 +183,16 @@ fun BaselinkerConfigScreen(
         Spacer(Modifier.height(16.dp))
         Text("Mapowanie dostawy → kurier", color = WarehouseAmber)
         Text(
-            "delivery_method_id i/lub fragment nazwy (pole odpowiedzi getOrders — API nie ma filtra wejściowego delivery). " +
-                "Używane gdy nie wszyscy kurierzy aktywni. Szablon dobierania niedostępny w API → szacunek.",
+            "Pełna edycja wzorców także w Ustawieniach → sektor 3. " +
+                "API nie filtruje po delivery — match client-side (contains).",
             color = Color.Gray,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
-        DefaultCouriers.ALL.forEach { courier ->
-            val existing = pool.deliveryMappings.filter { it.courierId == courier.id }
-            var methodId by remember(courier.id, existing) {
-                mutableStateOf(existing.firstOrNull()?.deliveryMethodId?.toString().orEmpty())
-            }
-            var nameContains by remember(courier.id, existing) {
-                mutableStateOf(existing.firstOrNull()?.nameContains.orEmpty())
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(WarehouseSlate)
-                    .padding(10.dp),
-            ) {
-                Text("${courier.defaultName} (${courier.groupId.defaultName})", color = Color.White)
-                Row {
-                    OutlinedTextField(
-                        value = methodId,
-                        onValueChange = { methodId = it },
-                        label = { Text("delivery_method_id") },
-                        modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedTextField(
-                        value = nameContains,
-                        onValueChange = { nameContains = it },
-                        label = { Text("nazwa zawiera…") },
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = {
-                        val mapping = DeliveryMapping(
-                            courierId = courier.id,
-                            deliveryMethodId = methodId.toIntOrNull(),
-                            nameContains = nameContains.ifBlank { null },
-                        )
-                        viewModel.updatePoolFilter { cfg ->
-                            val others = cfg.deliveryMappings.filterNot { it.courierId == courier.id }
-                            cfg.copy(
-                                deliveryMappings = if (mapping.isValid()) others + mapping else others,
-                            )
-                        }
-                    }) { Text("Zapisz") }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-        }
+        DeliveryMappingEditor(
+            pool = pool,
+            onUpdate = { next -> viewModel.updatePoolFilter { next } },
+        )
 
         Spacer(Modifier.height(12.dp))
         Text(

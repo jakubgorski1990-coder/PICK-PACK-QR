@@ -14,9 +14,10 @@ class PoolCountTest {
         PoolOrder(4, 10, 300, "ORLEN", true),
     )
     private val mappings = listOf(
-        DeliveryMapping("inpost", deliveryMethodId = 100, nameContains = null),
-        DeliveryMapping("dpd", nameContains = "DPD"),
-        DeliveryMapping("orlen", deliveryMethodId = 300, null),
+        DeliveryMapping("inpost", deliveryMethodId = 100, namePatterns = listOf("InPost")),
+        DeliveryMapping("dpd", namePatterns = listOf("DPD", "DPD_STD")),
+        DeliveryMapping("orlen", deliveryMethodId = 300),
+        DeliveryMapping("dhl", namePatterns = listOf("DHL", "STD_2do")),
     )
 
     @Test
@@ -51,5 +52,14 @@ class PoolCountTest {
             orders, mappings, activeCourierIds = setOf("inpost", "dpd"), onlyConfirmed = true,
         )
         assertThat(n).isEqualTo(3) // 2 inpost + 1 dpd; orlen excluded
+    }
+
+    @Test
+    fun partialVariant_multiPatternContainsMatchesAltName() {
+        val more = orders + PoolOrder(5, 10, null, "Kurier STD_2do PL", true)
+        val n = BaselinkerOrderPoolProvider.countMatching(
+            more, mappings, activeCourierIds = setOf("dhl"), onlyConfirmed = true,
+        )
+        assertThat(n).isEqualTo(1)
     }
 }

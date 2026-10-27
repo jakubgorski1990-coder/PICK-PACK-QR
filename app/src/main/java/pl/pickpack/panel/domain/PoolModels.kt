@@ -23,14 +23,28 @@ data class PoolFilterConfig(
         statusIds.isNotEmpty() && deliveryMappings.any { it.isValid() }
 }
 
+/**
+ * Maps BaseLinker delivery_method (response) → courier for partial-variant counters.
+ * Match: optional exact [deliveryMethodId], and/or any [namePatterns] via case-insensitive **contains**
+ * (e.g. DHL: „DHL”, „STD_2do”). Legacy [nameContains] is merged into patterns.
+ */
 data class DeliveryMapping(
     val courierId: String,
     val deliveryMethodId: Int? = null,
-    /** Case-insensitive substring match against delivery_method name. */
+    /** @deprecated Prefer [namePatterns]; still read for older configs. */
     val nameContains: String? = null,
+    /** Case-insensitive substring patterns against delivery_method name. */
+    val namePatterns: List<String> = emptyList(),
 ) {
+    fun allNamePatterns(): List<String> {
+        val out = linkedSetOf<String>()
+        nameContains?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+        namePatterns.map { it.trim() }.filter { it.isNotEmpty() }.forEach { out.add(it) }
+        return out.toList()
+    }
+
     fun isValid(): Boolean =
-        courierId.isNotBlank() && (deliveryMethodId != null || !nameContains.isNullOrBlank())
+        courierId.isNotBlank() && (deliveryMethodId != null || allNamePatterns().isNotEmpty())
 
     fun matches(deliveryMethodId: Int?, deliveryMethodName: String?): Boolean {
         if (this.deliveryMethodId != null && deliveryMethodId != null &&
@@ -38,12 +52,42 @@ data class DeliveryMapping(
         ) {
             return true
         }
-        val needle = nameContains?.trim()?.lowercase().orEmpty()
-        if (needle.isNotEmpty()) {
-            val hay = deliveryMethodName?.lowercase().orEmpty()
-            if (hay.contains(needle)) return true
+        val hay = deliveryMethodName?.lowercase().orEmpty()
+        if (hay.isEmpty()) return false
+        return allNamePatterns().any { pattern ->
+            hay.contains(pattern.lowercase())
         }
-        return false
+    }
+
+    fun withPatternAdded(pattern: String): DeliveryMapping {
+        val p = pattern.trim()
+        if (p.isEmpty()) return normalized()
+        return copy(nameContains = null, namePatterns = (allNamePatterns() + p).distinct())
+    }
+
+    fun withPatternRemoved(pattern: String): DeliveryMapping {
+        val needle = pattern.trim().lowercase()
+        return copy(
+            nameContains = null,
+            namePatterns = allNamePatterns().filter { it.lowercase() != needle },
+        )
+    }
+
+    /** Collapse legacy nameContains into namePatterns for persistence. */
+    fun normalized(): DeliveryMapping =
+        copy(nameContains = null, namePatterns = allNamePatterns())
+
+    companion object {
+        /** Merge several rows for the same courier (older multi-row storage). */
+        fun mergeForCourier(courierId: String, rows: List<DeliveryMapping>): DeliveryMapping {
+            val id = rows.mapNotNull { it.deliveryMethodId }.firstOrNull()
+            val patterns = rows.flatMap { it.allNamePatterns() }.distinct()
+            return DeliveryMapping(
+                courierId = courierId,
+                deliveryMethodId = id,
+                namePatterns = patterns,
+            )
+        }
     }
 }
 
