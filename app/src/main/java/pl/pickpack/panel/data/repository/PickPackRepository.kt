@@ -215,22 +215,24 @@ class PickPackRepository(
             return CounterDisplay.DemoValue(waiting, threshold = 25)
         }
         val pool = settings.poolFilter
-        val configured = settings.baselinkerTokenPresent && pool.isPoolConfigured()
-        if (!configured) return CounterDisplay.NotConfigured
+        if (!settings.baselinkerTokenPresent) return CounterDisplay.NotConfigured
+        val groupStatusId = pool.statusIdFor(groupId)
+        if (groupStatusId == null) return CounterDisplay.NotConfigured
         val active = couriers.filter { it.groupId == groupId && it.isActive }.map { it.id }.toSet()
         val groupCourierIds = DefaultCouriers.forGroup(groupId).map { it.id }.toSet()
         val allActive = active == groupCourierIds && active.isNotEmpty()
         val variantKey = QrVariantKey.fromActiveCouriers(groupId, active)
         val orders = blPool.cachedOrders()
         val onlyConfirmed = pool.onlyConfirmed
-        // Start variant (mask 7): count = getOrders(status_id) cache size.
-        // Partial: delivery filter of active couriers.
+        // Start variant: count = getOrders(status_id tej grupy).
+        // Partial: te zamówienia ∩ delivery aktywnych kurierów.
         val (waiting, hint, estimated) = when {
             active.isEmpty() -> Triple(0, "brak aktywnych kurierów", true)
-            sync.inProgress && orders.isEmpty() -> Triple(0, "synchronizacja…", true)
+            sync.inProgress && orders.none { it.statusId == groupStatusId } ->
+                Triple(0, "synchronizacja…", true)
             allActive || variantKey?.mask == 7 -> Triple(
-                BaselinkerOrderPoolProvider.countInPoolStatuses(orders, onlyConfirmed),
-                "PP start: getOrders status_id ${pool.statusIds.joinToString(",")}",
+                BaselinkerOrderPoolProvider.countInPoolStatuses(orders, onlyConfirmed, groupStatusId),
+                null, // start: only the waiting count under QR — no status_id label
                 false,
             )
             !pool.hasDeliveryMappings() -> Triple(
@@ -244,8 +246,9 @@ class PickPackRepository(
                     mappings = pool.deliveryMappings,
                     activeCourierIds = active,
                     onlyConfirmed = onlyConfirmed,
+                    statusId = groupStatusId,
                 ),
-                "wariant filtrów: delivery aktywnych kurierów (szacunek)",
+                "wariant filtrów",
                 true,
             )
         }

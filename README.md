@@ -21,7 +21,7 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`
 1. **Token** — Ustawienia → „Konfiguracja API / filtrów / sync” → wklej token z panelu BL (*Account & other → My account → API*). Zapis w Android Keystore / EncryptedSharedPreferences. **Nigdy** w repo, logach ani eksporcie JSON.
 2. **Template ID (14 wariantów)** — Kompletność 14: pole Template ID. Prefill pełnych zestawów: Pick/Pack 1 maska „wszyscy” = **18472**, Pick/Pack 2 = **18173**. Pozostałe 12 ID wpisuje admin.
 3. **Treść QR** — lokalnie: `BLPPT_` + ID dopełnione do 6 cyfr (np. `BLPPT_018472`). Override treści / import obrazu nadal możliwy.
-4. **Licznik Pick/Pack** — po wyborze `status_id` puli: auto-sync `getOrders` (paginacja `id_from`). **Wariant startowy** (mask 7): count = liczba zamówień w tych statusach (bez wymogu mapowania delivery). **Częściowe**: filtr delivery (wzorce „zawiera”).
+4. **Licznik Pick/Pack** — **osobny `status_id` dla PP1 i PP2**. Auto-sync `getOrders` obu. **Wariant startowy**: count = zamówienia w statusie **tej** grupy. **Częściowe**: ∩ delivery (wzorce „zawiera”).
 5. **Ustawienia** — sektory: Panel · BaseLinker · Mapowanie kurierów · Statusy imienne · Godziny/audio · Dzień/reset.
 
 ## Ograniczenia API
