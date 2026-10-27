@@ -1,6 +1,7 @@
 package pl.pickpack.panel.presentation.main
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,18 +11,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,8 +37,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,7 +56,6 @@ import pl.pickpack.panel.presentation.imienne.ImienneScreen
 import pl.pickpack.panel.presentation.theme.WarehouseAmber
 import pl.pickpack.panel.presentation.theme.WarehouseMuted
 import pl.pickpack.panel.presentation.theme.WarehouseNavy
-import pl.pickpack.panel.presentation.theme.WarehouseSlate
 import pl.pickpack.panel.viewmodel.MainViewModel
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -83,7 +84,6 @@ fun MainScreen(
         }
     }
 
-    // Reset idle clock whenever user lands on / stays interacting with IMIENNE
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { page ->
             if (page == PAGE_IMIENNE) {
@@ -113,42 +113,15 @@ fun MainScreen(
         }
 
         Column(modifier = Modifier.fillMaxSize()) {
-            TopBar(
+            CompactTopBar(
                 clock = clock,
                 snapshot = snapshot,
+                pageIndex = pagerState.currentPage,
                 undoAvailable = undoAvailable,
                 onUndo = { viewModel.undo() },
                 onOpenSettings = onOpenSettings,
+                onSelectPage = { page -> scope.launch { pagerState.animateScrollToPage(page) } },
             )
-
-            // Main section tabs: Pick/Pack | IMIENNE (also swipeable via pager)
-            TabRow(
-                selectedTabIndex = pagerState.currentPage,
-                containerColor = WarehouseSlate,
-            ) {
-                Tab(
-                    selected = pagerState.currentPage == PAGE_PICK_PACK,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(PAGE_PICK_PACK) } },
-                    text = {
-                        Text(
-                            "Pick / Pack",
-                            color = if (pagerState.currentPage == PAGE_PICK_PACK) WarehouseAmber else Color.White,
-                            fontSize = 16.sp,
-                        )
-                    },
-                )
-                Tab(
-                    selected = pagerState.currentPage == PAGE_IMIENNE,
-                    onClick = { scope.launch { pagerState.animateScrollToPage(PAGE_IMIENNE) } },
-                    text = {
-                        Text(
-                            "IMIENNE",
-                            color = if (pagerState.currentPage == PAGE_IMIENNE) WarehouseAmber else Color.White,
-                            fontSize = 16.sp,
-                        )
-                    },
-                )
-            }
 
             HorizontalPager(
                 state = pagerState,
@@ -192,7 +165,7 @@ fun MainScreen(
             Snackbar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp, start = 24.dp, end = 24.dp),
+                    .padding(bottom = 16.dp, start = 16.dp, end = 16.dp),
                 action = {
                     TextButton(onClick = { viewModel.consumeMessage() }) { Text("OK") }
                 },
@@ -205,56 +178,100 @@ fun MainScreen(
     }
 }
 
+/**
+ * Thin chrome: clock + connection + actions + page dots (Pick/Pack · IMIENNE).
+ * No large section titles — QR gets the vertical budget.
+ */
 @Composable
-private fun TopBar(
+private fun CompactTopBar(
     clock: LocalTime,
     snapshot: PickPackRepository.PanelSnapshot,
+    pageIndex: Int,
     undoAvailable: Boolean,
     onUndo: () -> Unit,
     onOpenSettings: () -> Unit,
+    onSelectPage: (Int) -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .height(36.dp)
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = clock.format(DateTimeFormatter.ofPattern("HH:mm:ss")),
-            style = MaterialTheme.typography.displayLarge,
+            text = clock.format(DateTimeFormatter.ofPattern("HH:mm")),
             color = Color.White,
-            fontSize = 28.sp,
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(
-            "Pick / Pack — Panel magazynu",
-            color = WarehouseAmber,
-            style = MaterialTheme.typography.titleLarge,
-            fontSize = 18.sp,
+            fontSize = 14.sp,
         )
         if (snapshot.settings.demoMode) {
-            Spacer(Modifier.width(8.dp))
-            Text(DemoContent.BANNER, color = WarehouseAmber, fontSize = 12.sp)
+            Spacer(Modifier.width(6.dp))
+            Text("DEMO", color = WarehouseAmber, fontSize = 11.sp)
         }
+        Spacer(Modifier.width(8.dp))
+        PageDots(
+            pageCount = 2,
+            selected = pageIndex,
+            onSelect = onSelectPage,
+            labels = listOf("Pick/Pack", "IMIENNE"),
+        )
         Spacer(Modifier.weight(1f))
         if (snapshot.namedAlert.active) {
             Text(
-                "⚠ Imienny (${snapshot.namedAlert.overdueCount})",
+                "⚠${snapshot.namedAlert.overdueCount}",
                 color = WarehouseAmber,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(6.dp))
         }
-        Text(snapshot.connectionLabel, color = WarehouseMuted, fontSize = 13.sp)
+        Text(snapshot.connectionLabel, color = WarehouseMuted, fontSize = 11.sp)
         if (undoAvailable) {
-            TextButton(onClick = onUndo) {
-                Icon(Icons.Default.Undo, contentDescription = null, tint = WarehouseAmber)
-                Spacer(Modifier.width(4.dp))
-                Text("Cofnij", color = WarehouseAmber)
+            IconButton(onClick = onUndo, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Default.Undo,
+                    contentDescription = "Cofnij",
+                    tint = WarehouseAmber,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
-        IconButton(onClick = onOpenSettings) {
-            Icon(Icons.Default.Settings, contentDescription = "Ustawienia", tint = Color.White)
+        IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Default.Settings,
+                contentDescription = "Ustawienia",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PageDots(
+    pageCount: Int,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    labels: List<String>,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.semantics { contentDescription = "Strona ${selected + 1} z $pageCount" },
+    ) {
+        repeat(pageCount) { i ->
+            val active = i == selected
+            Box(
+                modifier = Modifier
+                    .size(if (active) 8.dp else 6.dp)
+                    .background(
+                        if (active) WarehouseAmber else WarehouseMuted,
+                        CircleShape,
+                    )
+                    .clickable { onSelect(i) }
+                    .semantics {
+                        contentDescription = labels.getOrElse(i) { "Strona ${i + 1}" }
+                    },
+            )
         }
     }
 }
@@ -276,35 +293,39 @@ private fun PickPackPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         if (codeCount == 1 && visibleGroups.size > 1) {
-            TabRow(
-                selectedTabIndex = selectedGroupTab.coerceIn(0, visibleGroups.lastIndex.coerceAtLeast(0)),
-                containerColor = WarehouseSlate,
+            // Minimal group switcher — dots + tiny labels, not a full TabRow
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 2.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 visibleGroups.forEachIndexed { index, g ->
-                    Tab(
-                        selected = selectedGroupTab == index,
-                        onClick = { viewModel.selectGroupTab(index) },
-                        text = {
-                            Text(
-                                g.displayName,
-                                fontSize = 16.sp,
-                                color = if (selectedGroupTab == index) WarehouseAmber else Color.White,
-                            )
-                        },
+                    val selected = selectedGroupTab == index
+                    Text(
+                        text = g.displayName,
+                        color = if (selected) WarehouseAmber else WarehouseMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .clickable { viewModel.selectGroupTab(index) }
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
                     )
+                    if (index < visibleGroups.lastIndex) {
+                        Text("·", color = WarehouseMuted, fontSize = 11.sp)
+                    }
                 }
             }
-            Spacer(Modifier.height(6.dp))
         }
 
         Row(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             showGroups.forEach { group ->
                 val display = snapshot.displays[group.id] ?: QrDisplayState.AllPickedUp(group.id)
@@ -324,7 +345,7 @@ private fun PickPackPage(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         CourierBar(
             couriers = snapshot.couriers,
             onToggle = viewModel::toggleCourier,

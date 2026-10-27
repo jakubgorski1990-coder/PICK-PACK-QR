@@ -54,7 +54,7 @@ fun ImienneScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF121820))
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(horizontal = 2.dp, vertical = 1.dp),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             if (namedStatuses.isNotEmpty()) {
