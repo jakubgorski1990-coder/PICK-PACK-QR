@@ -23,6 +23,7 @@ class NamedStatusAudioTest {
             NamedStatusRef(356751, "Jakub") to R.raw.uwaga_jakub,
             NamedStatusRef(356752, "Kamil") to R.raw.uwaga_kamil,
             NamedStatusRef(356753, "Klaudia") to R.raw.uwaga_klaudia,
+            NamedStatusRef(356754, "Michał") to R.raw.uwaga_michal,
         )
         refs.forEach { (ref, expected) ->
             assertThat(NamedStatusAudio.hasCustomAudio(ref)).isTrue()
@@ -67,6 +68,7 @@ class NamedStatusAudioTest {
         assertThat(seeded[356751]).isEqualTo("jakub")
         assertThat(seeded[356752]).isEqualTo("kamil")
         assertThat(seeded[356753]).isEqualTo("klaudia")
+        assertThat(seeded[356754]).isEqualTo("michal")
         assertThat(seeded[356757]).isNull()
     }
 }

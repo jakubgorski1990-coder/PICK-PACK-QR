@@ -157,7 +157,7 @@ data class NamedStatusAlertConfig(
             NamedStatusRef(356751, "Jakub", audioKey = "jakub"),
             NamedStatusRef(356752, "Kamil", audioKey = "kamil"),
             NamedStatusRef(356753, "Klaudia", audioKey = "klaudia"),
-            NamedStatusRef(356754, "Michał"),
+            NamedStatusRef(356754, "Michał", audioKey = "michal"),
             NamedStatusRef(356755, "Ola"),
             NamedStatusRef(356756, "PBTO"),
             NamedStatusRef(356757, "Łukasz"),

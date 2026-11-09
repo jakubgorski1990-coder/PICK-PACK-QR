@@ -26,7 +26,8 @@ object NamedStatusAudio {
         356751 to "jakub",
         356752 to "kamil",
         356753 to "klaudia",
-        // future: 356754 to "michal", …
+        356754 to "michal",
+        // future: 356755 to "ola", …
     )
 
     /**
@@ -40,7 +41,8 @@ object NamedStatusAudio {
         "jakub" -> R.raw.uwaga_jakub
         "kamil" -> R.raw.uwaga_kamil
         "klaudia" -> R.raw.uwaga_klaudia
-        // future: "michal" -> R.raw.uwaga_michal, …
+        "michal" -> R.raw.uwaga_michal
+        // future: "ola" -> R.raw.uwaga_ola, …
         else -> R.raw.uwaga_imienny_status
     }
 
@@ -88,7 +90,8 @@ object NamedStatusAudio {
         if (n == "jakub" || n.startsWith("jakub")) return "jakub"
         if (n == "kamil" || n.startsWith("kamil")) return "kamil"
         if (n == "klaudia" || n.startsWith("klaudia")) return "klaudia"
-        // future name heuristics (michal, …) go here
+        if (n == "michal" || n.startsWith("michal")) return "michal"
+        // future name heuristics (ola, …) go here
         return null
     }
 

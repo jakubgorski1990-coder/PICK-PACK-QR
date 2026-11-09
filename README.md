@@ -48,7 +48,7 @@ Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same stat
 
 ## Alert głosowy — statusy imienne
 
-- **Per osoba:** `res/raw/uwaga_<key>.mp3` (ANIA → `uwaga_ania`, ANIA SZ → `uwaga_ania_sz`, Bartek, Jakub, Kamil, Klaudia, …). Brak clipu → wspólny `uwaga_imienny_status.mp3`.
+- **Per osoba:** `res/raw/uwaga_<key>.mp3` (ANIA → `uwaga_ania`, ANIA SZ → `uwaga_ania_sz`, Bartek, Jakub, Kamil, Klaudia, Michał, …). Brak clipu → wspólny `uwaga_imienny_status.mp3`.
 - Mapowanie: opcjonalne `audioKey` w ustawieniach + stałe `status_id` / heurystyka nazwy (`NamedStatusAudio`). Łatwo dodać kolejną osobę: wrzucić MP3 + wpis w rejestrze.
 - Ustawienia → **Statusy imienne**: lista `statusId` + imię, znacznik **custom / fallback**, ▶ test per osoba, „Test generic”, próg minut (default **30**), cooldown (default **10**), włącz/wyłącz.
 - **Mały licznik** przy każdym statusie imiennym = ile zamówień jest w tym `status_id` (pasek na IMIENNE + ustawienia; przy QR jeśli nazwa = status).
