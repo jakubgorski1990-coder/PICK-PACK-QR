@@ -49,6 +49,7 @@ import pl.pickpack.panel.domain.CourierDeadlineConfig
 import pl.pickpack.panel.domain.CourierDeadlineLogic
 import pl.pickpack.panel.domain.NamedStatusAlertConfig
 import pl.pickpack.panel.domain.NamedStatusAlertLogic
+import pl.pickpack.panel.domain.NamedStatusAudio
 import pl.pickpack.panel.domain.NamedStatusCountLogic
 import pl.pickpack.panel.domain.NamedStatusRef
 import pl.pickpack.panel.domain.PoolFilterConfig
@@ -349,10 +350,13 @@ class PickPackRepository(
             )
             var lastPlayed = prev.lastPlayedEpochMs
             if (play) {
+                val clips = NamedStatusAudio.rawResIdsForOverdue(
+                    overdueStatusIds = overdue.map { it.statusId },
+                    statuses = effective.statuses,
+                )
                 withContext(Dispatchers.Main) {
-                    if (alertPlayer.playUwagaImienny()) {
-                        lastPlayed = nowMs
-                    }
+                    alertPlayer.enqueueNamedStatusClips(clips)
+                    lastPlayed = nowMs
                 }
             }
             _namedAlertState.value = NamedAlertState(
@@ -373,7 +377,12 @@ class PickPackRepository(
         }
     }
 
+    /** Generic shared imienny clip (fallback). */
     fun playNamedAlertTest(): Boolean = alertPlayer.playUwagaImienny()
+
+    /** Per-person clip for [ref], or generic fallback when no custom audio. */
+    fun playNamedAlertTest(ref: NamedStatusRef): Boolean =
+        alertPlayer.playNamedStatusClip(NamedStatusAudio.rawResFor(ref))
 
     suspend fun updateNamedStatusAlert(transform: (NamedStatusAlertConfig) -> NamedStatusAlertConfig) {
         settingsStore.updateNamedStatusAlert(transform)
@@ -381,8 +390,18 @@ class PickPackRepository(
 
     suspend fun upsertNamedStatus(ref: NamedStatusRef) {
         settingsStore.updateNamedStatusAlert { cfg ->
-            val others = cfg.statuses.filterNot { it.statusId == ref.statusId }
-            cfg.copy(statuses = others + ref)
+            val existing = cfg.statuses.firstOrNull { it.statusId == ref.statusId }
+            val merged = if (ref.audioKey != null) {
+                ref
+            } else {
+                // Preserve stored audioKey; otherwise resolve from id/name for known people.
+                val key = existing?.audioKey
+                    ?: NamedStatusAudio.resolveAudioKey(ref)
+                        .takeIf { it != NamedStatusAudio.FALLBACK_KEY }
+                ref.copy(audioKey = key)
+            }
+            val others = cfg.statuses.filterNot { it.statusId == merged.statusId }
+            cfg.copy(statuses = others + merged)
         }
     }
 

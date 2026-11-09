@@ -134,6 +134,11 @@ data class PoolOrder(
 data class NamedStatusRef(
     val statusId: Int,
     val displayName: String,
+    /**
+     * Optional raw-audio key (e.g. "ania", "bartek"). Null → resolve via
+     * [NamedStatusAudio] (status_id / name heuristics) or generic fallback.
+     */
+    val audioKey: String? = null,
 )
 
 data class NamedStatusAlertConfig(
@@ -146,12 +151,12 @@ data class NamedStatusAlertConfig(
 ) {
     companion object {
         fun defaultSeed(): List<NamedStatusRef> = listOf(
-            NamedStatusRef(356748, "ANIA"),
-            NamedStatusRef(356749, "ANIA SZ"),
-            NamedStatusRef(356750, "Bartek"),
-            NamedStatusRef(356751, "Jakub"),
-            NamedStatusRef(356752, "Kamil"),
-            NamedStatusRef(356753, "Klaudia"),
+            NamedStatusRef(356748, "ANIA", audioKey = "ania"),
+            NamedStatusRef(356749, "ANIA SZ", audioKey = "ania_sz"),
+            NamedStatusRef(356750, "Bartek", audioKey = "bartek"),
+            NamedStatusRef(356751, "Jakub", audioKey = "jakub"),
+            NamedStatusRef(356752, "Kamil", audioKey = "kamil"),
+            NamedStatusRef(356753, "Klaudia", audioKey = "klaudia"),
             NamedStatusRef(356754, "Michał"),
             NamedStatusRef(356755, "Ola"),
             NamedStatusRef(356756, "PBTO"),

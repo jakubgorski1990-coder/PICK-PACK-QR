@@ -39,6 +39,15 @@ class AlertSoundPlayer(context: Context) {
         return true
     }
 
+    /** Enqueue one or more imienny clips (per-person, FIFO, no overlap). */
+    fun enqueueNamedStatusClips(rawResIds: Collection<Int>) {
+        if (rawResIds.isEmpty()) {
+            enqueueUwagaImienny()
+            return
+        }
+        rawResIds.forEach { enqueue(it) }
+    }
+
     fun enqueue(rawResId: Int) {
         mainHandler.post {
             queue.addLast(rawResId)
@@ -46,9 +55,15 @@ class AlertSoundPlayer(context: Context) {
         }
     }
 
-    /** Immediate test — queued like other alerts. */
+    /** Immediate test — queued like other alerts (generic shared clip). */
     fun playUwagaImienny(): Boolean {
         enqueueUwagaImienny()
+        return true
+    }
+
+    /** Test a specific raw clip (per-person or generic). */
+    fun playNamedStatusClip(rawResId: Int): Boolean {
+        enqueue(rawResId)
         return true
     }
 

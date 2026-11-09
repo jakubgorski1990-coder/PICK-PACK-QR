@@ -48,10 +48,11 @@ Porównaj „Szacowana liczba” z ręcznym filtrem w managerze BL (te same stat
 
 ## Alert głosowy — statusy imienne
 
-- Plik lokalny: `res/raw/uwaga_imienny_status.mp3` („UWAGA w imiennym statusie pozostały zamówienia”).
-- Ustawienia → **Alert głosowy — statusy imienne**: lista `statusId` + imię (seed 10 statusów BL), próg minut (default **30**), cooldown (default **10**), włącz/wyłącz, test dźwięku.
+- **Per osoba:** `res/raw/uwaga_<key>.mp3` (ANIA → `uwaga_ania`, ANIA SZ → `uwaga_ania_sz`, Bartek, Jakub, Kamil, Klaudia, …). Brak clipu → wspólny `uwaga_imienny_status.mp3`.
+- Mapowanie: opcjonalne `audioKey` w ustawieniach + stałe `status_id` / heurystyka nazwy (`NamedStatusAudio`). Łatwo dodać kolejną osobę: wrzucić MP3 + wpis w rejestrze.
+- Ustawienia → **Statusy imienne**: lista `statusId` + imię, znacznik **custom / fallback**, ▶ test per osoba, „Test generic”, próg minut (default **30**), cooldown (default **10**), włącz/wyłącz.
 - **Mały licznik** przy każdym statusie imiennym = ile zamówień jest w tym `status_id` (pasek na IMIENNE + ustawienia; przy QR jeśli nazwa = status).
-- Co sync (ten sam token / `getOrders`): jeśli **jakiekolwiek** zamówienie w którymś statusie imiennym ma wiek w statusie **> próg**, odtwarzany jest MP3 (bez nakładania).
+- Co sync (ten sam token / `getOrders`): jeśli **jakiekolwiek** zamówienie w którymś statusie imiennym ma wiek w statusie **> próg**, w kolejkę FIFO trafiają **unikalne** clipy osób z przeterminowanymi zamówieniami (bez nakładania).
 - **Pole daty:** `date_in_status` (czas wejścia do bieżącego statusu). Fallback: `date_confirmed` → `date_add`. Brak daty → zamówienie nie liczy się do alertu.
 - Błąd API / brak tokena → **bez** dźwięku (błąd ≠ zero zamówień / zero liczników).
 - Wskaźnik na pasku: „⚠ Imienny (N)” gdy warunek aktywny.

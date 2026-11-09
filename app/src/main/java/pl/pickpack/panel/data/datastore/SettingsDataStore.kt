@@ -385,11 +385,13 @@ class SettingsDataStore(private val context: Context) {
             root.put("cooldownMinutes", cfg.cooldownMinutes)
             val arr = JSONArray()
             cfg.statuses.forEach { s ->
-                arr.put(
-                    JSONObject()
-                        .put("statusId", s.statusId)
-                        .put("displayName", s.displayName)
-                )
+                val item = JSONObject()
+                    .put("statusId", s.statusId)
+                    .put("displayName", s.displayName)
+                if (!s.audioKey.isNullOrBlank()) {
+                    item.put("audioKey", s.audioKey)
+                }
+                arr.put(item)
             }
             root.put("statuses", arr)
             return root.toString()
@@ -407,8 +409,9 @@ class SettingsDataStore(private val context: Context) {
                         val s = arr.getJSONObject(i)
                         val id = s.optInt("statusId", 0)
                         val name = s.optString("displayName")
+                        val audioKey = s.optString("audioKey").takeIf { it.isNotBlank() }
                         if (id > 0 && name.isNotBlank()) {
-                            add(NamedStatusRef(id, name))
+                            add(NamedStatusRef(id, name, audioKey = audioKey))
                         }
                     }
                 }
