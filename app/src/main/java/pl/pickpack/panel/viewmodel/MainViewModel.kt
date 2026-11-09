@@ -18,6 +18,7 @@ import pl.pickpack.panel.domain.CourierDeadline
 import pl.pickpack.panel.domain.CourierDeadlineConfig
 import pl.pickpack.panel.domain.NamedQrEntry
 import pl.pickpack.panel.domain.NamedStatusAlertConfig
+import pl.pickpack.panel.domain.NamedStatusAudio
 import pl.pickpack.panel.domain.NamedStatusRef
 import pl.pickpack.panel.domain.PoolFilterConfig
 import pl.pickpack.panel.domain.QrVariantConfig
@@ -289,13 +290,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { repo.updateNamedStatusAlert(transform) }
     }
 
-    fun upsertNamedStatus(statusId: Int, displayName: String) {
+    fun upsertNamedStatus(statusId: Int, displayName: String, audioKey: String? = null) {
         viewModelScope.launch {
             if (statusId <= 0 || displayName.isBlank()) {
                 _message.value = UiMessage("Podaj statusId i nazwę")
                 return@launch
             }
-            repo.upsertNamedStatus(NamedStatusRef(statusId, displayName.trim()))
+            repo.upsertNamedStatus(
+                NamedStatusRef(statusId, displayName.trim(), audioKey = audioKey)
+            )
             _message.value = UiMessage("Zapisano status imienny $displayName")
         }
     }
@@ -309,7 +312,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun testNamedAlertSound() {
         val ok = repo.playNamedAlertTest()
-        _message.value = UiMessage(if (ok) "Odtwarzanie alertu…" else "Nie udało się odtworzyć (zajęte?)")
+        _message.value = UiMessage(if (ok) "Odtwarzanie alertu (generic)…" else "Nie udało się odtworzyć (zajęte?)")
+    }
+
+    fun testNamedAlertSound(ref: NamedStatusRef) {
+        val key = NamedStatusAudio.resolveAudioKey(ref)
+        val ok = repo.playNamedAlertTest(ref)
+        _message.value = UiMessage(
+            if (ok) "Odtwarzanie: $key…" else "Nie udało się odtworzyć (zajęte?)"
+        )
     }
 
     fun checkNamedAlertNow() {

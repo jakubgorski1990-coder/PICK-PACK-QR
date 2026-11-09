@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pickpack.panel.domain.GroupId
+import pl.pickpack.panel.domain.NamedStatusAudio
 import pl.pickpack.panel.presentation.theme.WarehouseAmber
 import pl.pickpack.panel.presentation.theme.WarehouseNavy
 import pl.pickpack.panel.presentation.theme.WarehouseSlate
@@ -324,7 +325,7 @@ fun SettingsScreen(
         // ——— 4. Statusy imienne ———
         SettingsSector("4. Statusy imienne") {
             Text(
-                "Licznik = ile zamówień w status_id. Alert MP3 gdy wiek > próg (date_in_status).",
+                "Licznik = ile zamówień w status_id. Alert MP3 per osoba gdy wiek > próg (date_in_status); brak clipu → generic.",
                 color = Color.Gray,
                 fontSize = 12.sp,
             )
@@ -370,7 +371,7 @@ fun SettingsScreen(
                 }) { Text("Zapisz") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(onClick = { viewModel.testNamedAlertSound() }) { Text("Test MP3") }
+                Button(onClick = { viewModel.testNamedAlertSound() }) { Text("Test generic") }
                 Button(onClick = { viewModel.checkNamedAlertNow() }) { Text("Sprawdź teraz") }
             }
             Text(
@@ -413,20 +414,33 @@ fun SettingsScreen(
                     !alertUi.countsReliable -> "—"
                     else -> (alertUi.countsByStatusId[ref.statusId] ?: 0).toString()
                 }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                ) {
-                    Text("${ref.statusId}", color = WarehouseAmber, modifier = Modifier.width(72.dp), fontSize = 12.sp)
-                    Text(countText, color = Color.White, fontSize = 12.sp, modifier = Modifier.width(28.dp))
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
+                val audioKey = NamedStatusAudio.resolveAudioKey(ref)
+                val customAudio = NamedStatusAudio.hasCustomAudio(ref)
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("${ref.statusId}", color = WarehouseAmber, modifier = Modifier.width(72.dp), fontSize = 12.sp)
+                        Text(countText, color = Color.White, fontSize = 12.sp, modifier = Modifier.width(28.dp))
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        TextButton(onClick = { viewModel.testNamedAlertSound(ref) }) { Text("▶") }
+                        Button(onClick = { viewModel.upsertNamedStatus(ref.statusId, name, ref.audioKey) }) {
+                            Text("Zapisz")
+                        }
+                        TextButton(onClick = { viewModel.deleteNamedStatus(ref.statusId) }) { Text("Usuń") }
+                    }
+                    Text(
+                        if (customAudio) "Audio: custom ($audioKey)" else "Audio: fallback (generic)",
+                        color = if (customAudio) WarehouseAmber else Color.Gray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(start = 100.dp),
                     )
-                    Button(onClick = { viewModel.upsertNamedStatus(ref.statusId, name) }) { Text("Zapisz") }
-                    TextButton(onClick = { viewModel.deleteNamedStatus(ref.statusId) }) { Text("Usuń") }
                 }
             }
         }
