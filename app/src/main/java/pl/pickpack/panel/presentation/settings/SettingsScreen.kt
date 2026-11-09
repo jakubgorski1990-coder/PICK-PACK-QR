@@ -505,10 +505,64 @@ fun SettingsScreen(
         // ——— 6. Dzień / reset ———
         SettingsSector("6. Dzień / reset") {
             SettingSwitch(
-                label = "Reset dzienny Europe/Warsaw (domyślnie off)",
+                label = "Reset dzienny kurierów (Europe/Warsaw)",
                 checked = snapshot.settings.dailyResetEnabled,
                 onChange = { v -> viewModel.updateSettings { it.copy(dailyResetEnabled = v) } },
             )
+            Text(
+                "Gdy włączone: o podanej godzinie wszyscy kurierzy → „Czeka” (1× dziennie). " +
+                    "Działa też przy keep-screen-on bez restartu aplikacji.",
+                color = Color.Gray,
+                fontSize = 11.sp,
+            )
+            val s = snapshot.settings
+            var resetHh by remember(s.dailyResetHour) {
+                mutableStateOf(s.dailyResetHour.toString().padStart(2, '0'))
+            }
+            var resetMm by remember(s.dailyResetMinute) {
+                mutableStateOf(s.dailyResetMinute.toString().padStart(2, '0'))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Godzina resetu", color = Color.White, modifier = Modifier.width(120.dp), fontSize = 13.sp)
+                OutlinedTextField(
+                    value = resetHh,
+                    onValueChange = { resetHh = it.filter { ch -> ch.isDigit() }.take(2) },
+                    label = { Text("HH") },
+                    modifier = Modifier.width(64.dp),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Text(":", color = Color.White)
+                OutlinedTextField(
+                    value = resetMm,
+                    onValueChange = { resetMm = it.filter { ch -> ch.isDigit() }.take(2) },
+                    label = { Text("MM") },
+                    modifier = Modifier.width(64.dp),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    val h = resetHh.toIntOrNull()
+                    val m = resetMm.toIntOrNull() ?: 0
+                    if (h != null && h in 0..23 && m in 0..59) {
+                        viewModel.updateSettings {
+                            it.copy(dailyResetHour = h, dailyResetMinute = m)
+                        }
+                        resetHh = h.toString().padStart(2, '0')
+                        resetMm = m.toString().padStart(2, '0')
+                    }
+                }) { Text("Zapisz") }
+            }
+            Text(
+                "Zapisane: %02d:%02d Europe/Warsaw (domyślnie 15:30)".format(
+                    s.dailyResetHour,
+                    s.dailyResetMinute,
+                ),
+                color = Color.Gray,
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(8.dp))
             Button(onClick = { showNewDayConfirm = true }) {
                 Text("Nowy dzień — wszyscy aktywni")
             }

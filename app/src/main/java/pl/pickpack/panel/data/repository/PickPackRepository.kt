@@ -47,6 +47,7 @@ import pl.pickpack.panel.domain.NamedAlertState
 import pl.pickpack.panel.domain.NamedQrEntry
 import pl.pickpack.panel.domain.CourierDeadlineConfig
 import pl.pickpack.panel.domain.CourierDeadlineLogic
+import pl.pickpack.panel.domain.DailyResetLogic
 import pl.pickpack.panel.domain.NamedStatusAlertConfig
 import pl.pickpack.panel.domain.NamedStatusAlertLogic
 import pl.pickpack.panel.domain.NamedStatusCountLogic
@@ -61,7 +62,6 @@ import pl.pickpack.panel.domain.QrVariantKey
 import pl.pickpack.panel.domain.SyncState
 import java.io.File
 import java.io.FileOutputStream
-import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.UUID
@@ -197,6 +197,7 @@ class PickPackRepository(
             maybeDailyReset()
             launch { runSyncLoop() }
             launch { runCourierDeadlineLoop() }
+            launch { runDailyResetLoop() }
         }
     }
 
@@ -701,19 +702,36 @@ class PickPackRepository(
         return BitmapFactory.decodeFile(path)
     }
 
+    /**
+     * Foreground tick (~30 s): daily courier reset at configured HH:mm in settings timezone
+     * (default Europe/Warsaw). Runs while process stays alive (keep-screen-on).
+     */
+    private suspend fun runDailyResetLoop() {
+        while (scope.isActive) {
+            try {
+                maybeDailyReset()
+            } catch (_: Exception) {
+            }
+            delay(30_000L)
+        }
+    }
+
     suspend fun maybeDailyReset() {
         val settings = settingsFlow.first()
-        if (!settings.dailyResetEnabled) return
-        val zone = ZoneId.of(settings.timezoneId)
-        val now = java.time.ZonedDateTime.now(zone)
-        val dayKey = LocalDate.now(zone).toString()
-        if (settingsStore.lastResetDay() == dayKey) return
-        if (now.hour > settings.dailyResetHour ||
-            (now.hour == settings.dailyResetHour && now.minute >= settings.dailyResetMinute)
+        val zone = runCatching { ZoneId.of(settings.timezoneId) }.getOrDefault(DailyResetLogic.WARSAW)
+        val now = ZonedDateTime.now(zone)
+        if (!DailyResetLogic.shouldReset(
+                enabled = settings.dailyResetEnabled,
+                now = now,
+                hour = settings.dailyResetHour,
+                minute = settings.dailyResetMinute,
+                lastResetDay = settingsStore.lastResetDay(),
+            )
         ) {
-            resetAllActive()
-            settingsStore.markResetDay(dayKey)
+            return
         }
+        resetAllActive()
+        settingsStore.markResetDay(DailyResetLogic.dayKey(now))
     }
 
     fun findDuplicatePayloads(variants: List<QrVariantConfig>): Map<String, List<QrVariantKey>> {

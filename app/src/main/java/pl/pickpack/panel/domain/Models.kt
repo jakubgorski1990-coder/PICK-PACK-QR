@@ -139,9 +139,12 @@ data class AppSettings(
     val pinEnabled: Boolean = false,
     val pinHash: String? = null,
     val demoMode: Boolean = false,
+    /** When true, all couriers → active once per Warsaw calendar day after [dailyResetHour]:[dailyResetMinute]. */
     val dailyResetEnabled: Boolean = false,
-    val dailyResetHour: Int = 5,
-    val dailyResetMinute: Int = 0,
+    /** Local hour in [timezoneId] (default Europe/Warsaw). */
+    val dailyResetHour: Int = 15,
+    /** Local minute in [timezoneId]. */
+    val dailyResetMinute: Int = 30,
     val timezoneId: String = "Europe/Warsaw",
     val baselinkerTokenPresent: Boolean = false,
     val counterConfigured: Boolean = false,
